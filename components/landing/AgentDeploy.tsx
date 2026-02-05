@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { agents } from "@/lib/agents-data";
 
@@ -100,7 +100,6 @@ export default function AgentDeploy() {
           {/* Task targets (right side) */}
           {tasks.map((task) => {
             const agent = getAgent(task.agentId);
-            const isActive = activeDeployments.includes(task.id);
             const isCompleted = completedTasks.includes(task.id);
 
             return (

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Return user without password hash
-      const { passwordHash, ...safeUser } = result.user!;
+      const { passwordHash: _p1, ...safeUser } = result.user!;
       return NextResponse.json({ user: safeUser });
     }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Return user without password hash
-      const { passwordHash, ...safeUser } = result.user!;
+      const { passwordHash: _p2, ...safeUser } = result.user!;
       return NextResponse.json({ user: safeUser });
     }
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       if (!user) {
         return NextResponse.json({ exists: false });
       }
-      const { passwordHash, ...safeUser } = user;
+      const { passwordHash: _p3, ...safeUser } = user;
       return NextResponse.json({ exists: true, user: safeUser });
     }
 
@@ -51,7 +51,7 @@ export async function GET() {
   try {
     const users = await getUsers();
     // Return users without password hashes
-    const safeUsers = users.map(({ passwordHash, ...user }) => user);
+    const safeUsers = users.map(({ passwordHash: _, ...user }) => user);
     return NextResponse.json({ users: safeUsers, count: safeUsers.length });
   } catch (error) {
     console.error("Get users error:", error);

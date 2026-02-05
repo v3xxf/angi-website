@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySignature } from "@/lib/razorpay";
-import { updateUserPlan, completePayment, getPaymentByOrderId } from "@/lib/storage";
+import { updateUserPlan, completePayment } from "@/lib/storage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
       plan,
       userId,
       currency,
-      amount,
     } = await request.json();
 
     // Verify signature

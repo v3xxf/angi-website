@@ -50,7 +50,7 @@ const statusColors = {
 };
 
 export default function RoadmapPage() {
-  const [selectedQuarter, setSelectedQuarter] = useState<string | null>(null);
+  const [_selectedQuarter, _setSelectedQuarter] = useState<string | null>(null);
 
   return (
     <main className="min-h-screen bg-background relative">

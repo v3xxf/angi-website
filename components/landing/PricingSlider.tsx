@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { pricingTiers, currencySymbols } from "@/lib/constants";
 import { agents } from "@/lib/agents-data";
 import Button from "../ui/Button";

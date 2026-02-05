@@ -58,7 +58,7 @@ export async function signUp(
 
     setUser(data.user);
     return { user: data.user, error: null };
-  } catch (error) {
+  } catch {
     return { user: null, error: { message: "Network error. Please try again." } };
   }
 }
@@ -83,7 +83,7 @@ export async function signIn(
 
     setUser(data.user);
     return { user: data.user, error: null };
-  } catch (error) {
+  } catch {
     return { user: null, error: { message: "Network error. Please try again." } };
   }
 }
@@ -138,7 +138,7 @@ export async function updateUserPlan(
     setUser(updatedUser);
     
     return { user: updatedUser, error: null };
-  } catch (error) {
+  } catch {
     return { user: null, error: { message: "Network error. Please try again." } };
   }
 }
@@ -160,7 +160,7 @@ export async function refreshUser(): Promise<{ user: User | null; error: AuthErr
 
     setUser(data.user);
     return { user: data.user, error: null };
-  } catch (error) {
+  } catch {
     return { user: null, error: { message: "Network error. Please try again." } };
   }
 }

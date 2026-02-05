@@ -14,7 +14,7 @@ export async function GET(
     }
 
     // Return user without password hash
-    const { passwordHash, ...safeUser } = user;
+    const { passwordHash: _, ...safeUser } = user;
     return NextResponse.json({ user: safeUser });
   } catch (error) {
     console.error("Get user error:", error);
@@ -43,7 +43,7 @@ export async function PATCH(
     // Get updated user
     const user = await getUserById(params.id);
     if (user) {
-      const { passwordHash, ...safeUser } = user;
+      const { passwordHash: __, ...safeUser } = user;
       return NextResponse.json({ user: safeUser });
     }
 

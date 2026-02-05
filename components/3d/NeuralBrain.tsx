@@ -12,9 +12,8 @@ function BrainNodes({ isProcessing }: { isProcessing: boolean }) {
   
   const nodeCount = 300;
   
-  const [positions, sizes] = useMemo(() => {
+  const [positions] = useMemo(() => {
     const positions = new Float32Array(nodeCount * 3);
-    const sizes = new Float32Array(nodeCount);
     
     for (let i = 0; i < nodeCount; i++) {
       const i3 = i * 3;

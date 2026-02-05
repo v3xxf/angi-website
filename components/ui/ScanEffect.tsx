@@ -7,19 +7,18 @@ export default function ScanEffect() {
   const [isScanning, setIsScanning] = useState(true);
   const [systemText, setSystemText] = useState("");
 
-  const bootSequence = [
-    "INITIALIZING NEURAL INTERFACE...",
-    "LOADING AI AGENTS...",
-    "ESTABLISHING SECURE CONNECTION...",
-    "CALIBRATING RESPONSE MATRIX...",
-    "SYSTEM ONLINE",
-  ];
-
   useEffect(() => {
+    const sequence = [
+      "INITIALIZING NEURAL INTERFACE...",
+      "LOADING AI AGENTS...",
+      "ESTABLISHING SECURE CONNECTION...",
+      "CALIBRATING RESPONSE MATRIX...",
+      "SYSTEM ONLINE",
+    ];
     let currentIndex = 0;
     const interval = setInterval(() => {
-      if (currentIndex < bootSequence.length) {
-        setSystemText(bootSequence[currentIndex]);
+      if (currentIndex < sequence.length) {
+        setSystemText(sequence[currentIndex]);
         currentIndex++;
       } else {
         clearInterval(interval);

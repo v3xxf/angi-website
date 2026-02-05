@@ -13,9 +13,37 @@ type Currency = "USD" | "INR";
 
 // Razorpay types
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
   }
+}
+
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  handler: (response: RazorpayResponse) => void;
+  prefill: {
+    email?: string;
+    name?: string;
+  };
+  theme: {
+    color: string;
+  };
+}
+
+interface RazorpayResponse {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayInstance {
+  open: () => void;
 }
 
 function CheckoutContent() {
@@ -110,7 +138,7 @@ function CheckoutContent() {
         theme: {
           color: "#00d4ff",
         },
-        handler: async function (response: any) {
+        handler: async function (response: RazorpayResponse) {
           // Verify payment on server
           try {
             const verifyResponse = await fetch("/api/razorpay/verify", {
@@ -131,14 +159,14 @@ function CheckoutContent() {
 
             if (verifyResponse.ok && verifyData.success) {
               // Update local user plan
-              await updateUserPlan(plan.id as any, currency);
+              await updateUserPlan(plan.id as "free" | "starter" | "pro" | "enterprise", currency);
               
               // Redirect to success
               router.push("/dashboard?payment=success");
             } else {
               setError("Payment verification failed. Please contact support.");
             }
-          } catch (err) {
+          } catch {
             setError("Payment verification failed. Please contact support.");
           }
           setProcessing(false);

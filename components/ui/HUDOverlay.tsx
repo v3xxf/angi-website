@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { totalAgents, totalTasksCompleted } from "@/lib/agents-data";
+import { totalAgents } from "@/lib/agents-data";
 
 export default function HUDOverlay() {
   const [isExpanded, setIsExpanded] = useState(false);
