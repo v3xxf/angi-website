@@ -14,7 +14,6 @@ import WorkflowBuilder from "@/components/landing/WorkflowBuilder";
 import ComparisonMatrix from "@/components/landing/ComparisonMatrix";
 import AgentDeploy from "@/components/landing/AgentDeploy";
 import ImmersiveFooter from "@/components/landing/ImmersiveFooter";
-import GlobalUsers from "@/components/landing/GlobalUsers";
 
 export default function Home() {
   return (
@@ -48,9 +47,6 @@ export default function Home() {
         
         {/* Agent Deployment Animation */}
         <AgentDeploy />
-        
-        {/* Global Users - 3D Globe */}
-        <GlobalUsers />
         
         {/* Comparison Matrix */}
         <ComparisonMatrix />
