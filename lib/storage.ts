@@ -14,6 +14,11 @@ const DATA_DIR = process.env.NODE_ENV === "production"
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const PAYMENTS_FILE = path.join(DATA_DIR, "payments.json");
 
+// Admin emails - these users are automatically granted admin role
+const ADMIN_EMAILS = [
+  "varunagarwl3169@gmail.com",
+];
+
 // Types
 export interface StoredUser {
   id: string;
@@ -127,13 +132,19 @@ export async function createUser(
     return { user: null, error: "Please enter a valid phone number (at least 10 digits)" };
   }
 
+  // Auto-assign admin role for designated admin emails
+  const isAdminEmail = ADMIN_EMAILS.some(
+    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
+  );
+  const finalRole = isAdminEmail ? "admin" : role;
+
   const newUser: StoredUser = {
     id: generateId(),
     email: email.toLowerCase(),
     name: name || email.split("@")[0],
     phone: phone,
     passwordHash: hashPassword(password),
-    role: role,
+    role: finalRole,
     plan: "free",
     signupIp: signupIp,
     createdAt: new Date().toISOString(),
@@ -159,6 +170,21 @@ export async function verifyUser(
 
   if (user.passwordHash !== hashPassword(password)) {
     return { user: null, error: "Incorrect password" };
+  }
+
+  // Auto-promote to admin if email is in admin list
+  const isAdminEmail = ADMIN_EMAILS.some(
+    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
+  );
+  if (isAdminEmail && user.role !== "admin") {
+    const users = await getUsers();
+    const userIndex = users.findIndex((u) => u.id === user.id);
+    if (userIndex !== -1) {
+      users[userIndex].role = "admin";
+      users[userIndex].updatedAt = new Date().toISOString();
+      await saveUsers(users);
+      user.role = "admin";
+    }
   }
 
   return { user, error: null };
