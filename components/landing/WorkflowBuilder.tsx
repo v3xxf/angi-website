@@ -39,7 +39,7 @@ const availableNodes = [
 ];
 
 export default function WorkflowBuilder() {
-  const [_nodes, _setNodes] = useState(initialNodes);
+  const [nodes] = useState(initialNodes);
   const [isAnimating, setIsAnimating] = useState(false);
   const [activeNode, setActiveNode] = useState<string | null>(null);
 
