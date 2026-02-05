@@ -14,6 +14,7 @@ import WorkflowBuilder from "@/components/landing/WorkflowBuilder";
 import ComparisonMatrix from "@/components/landing/ComparisonMatrix";
 import AgentDeploy from "@/components/landing/AgentDeploy";
 import ImmersiveFooter from "@/components/landing/ImmersiveFooter";
+import GlobalUsers from "@/components/landing/GlobalUsers";
 
 export default function Home() {
   return (
@@ -30,6 +31,9 @@ export default function Home() {
         <Navbar />
         <HeroWarRoom />
         
+        {/* Agent Marketplace - Show what they get */}
+        <AgentMarketplace />
+        
         {/* Voice Command Demo */}
         <VoiceCommand />
         
@@ -42,16 +46,21 @@ export default function Home() {
         {/* Workflow Builder */}
         <WorkflowBuilder />
         
-        <AgentMarketplace />
-        
         {/* Agent Deployment Animation */}
         <AgentDeploy />
+        
+        {/* Global Users - 3D Globe */}
+        <GlobalUsers />
         
         {/* Comparison Matrix */}
         <ComparisonMatrix />
         
+        {/* Social proof */}
         <ActivityPulse />
+        
+        {/* Pricing - Main conversion point */}
         <PricingSlider />
+        
         <FAQ />
         <ImmersiveFooter />
         <LiveChat />

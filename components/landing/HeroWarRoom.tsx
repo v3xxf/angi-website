@@ -66,18 +66,39 @@ export default function HeroWarRoom() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="flex flex-wrap gap-4 mb-12"
+              className="flex flex-wrap gap-4 mb-8"
             >
+              <Link href="/signup">
+                <Button size="lg" className="bg-gradient-to-r from-hud-blue to-hud-cyan hover:shadow-xl hover:shadow-hud-cyan/30 transition-all text-lg px-8 py-4">
+                  🚀 Hire Your AI Team
+                </Button>
+              </Link>
               <Link href="#marketplace">
-                <Button size="lg">
+                <Button variant="secondary" size="lg" className="text-lg px-8 py-4">
                   Browse Agents
                 </Button>
               </Link>
-              <Link href="#demo">
-                <Button variant="secondary" size="lg">
-                  Try Demo
-                </Button>
-              </Link>
+            </motion.div>
+
+            {/* Social proof */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.35 }}
+              className="mb-12"
+            >
+              <div className="flex items-center gap-4 text-sm text-foreground-secondary">
+                <div className="flex -space-x-2">
+                  {["👨‍💻", "👩‍💼", "🧑‍💼", "👨‍🎨", "👩‍🔬"].map((emoji, i) => (
+                    <div key={i} className="w-8 h-8 rounded-full bg-hud-purple/50 flex items-center justify-center border-2 border-background">
+                      {emoji}
+                    </div>
+                  ))}
+                </div>
+                <span>
+                  <span className="text-white font-medium">4,800+ professionals</span> already using Angi
+                </span>
+              </div>
             </motion.div>
 
             {/* Live stats */}
