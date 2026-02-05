@@ -62,7 +62,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "payments">("overview");
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
-  const [isFirstAdmin, setIsFirstAdmin] = useState(false);
+  const [_isFirstAdmin, setIsFirstAdmin] = useState(false);
 
   useEffect(() => {
     const user = getUser();
