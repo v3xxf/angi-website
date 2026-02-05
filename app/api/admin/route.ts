@@ -3,19 +3,39 @@ import { getUsers, getPayments, getUserById, makeUserAdmin, isUserAdmin } from "
 
 export const dynamic = "force-dynamic";
 
+// Hardcoded admin emails for reliable access
+const ADMIN_EMAILS = [
+  "varunagarwl3169@gmail.com",
+];
+
+// Check if email is admin
+function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.some(
+    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
+  );
+}
+
 // GET /api/admin - Get all users and payments (admin only)
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from header (set by client)
+    // Get user ID or email from header (set by client)
     const userId = request.headers.get("x-user-id");
+    const userEmail = request.headers.get("x-user-email");
     
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized - no user ID" }, { status: 401 });
+    if (!userId && !userEmail) {
+      return NextResponse.json({ error: "Unauthorized - no user ID or email" }, { status: 401 });
     }
 
-    // Check if user is admin
-    const isAdmin = await isUserAdmin(userId);
-    if (!isAdmin) {
+    // Check if user is admin - either by stored role or by email
+    let hasAdminAccess = false;
+    
+    if (userEmail && isAdminEmail(userEmail)) {
+      hasAdminAccess = true;
+    } else if (userId) {
+      hasAdminAccess = await isUserAdmin(userId);
+    }
+    
+    if (!hasAdminAccess) {
       return NextResponse.json({ error: "Forbidden - admin access required" }, { status: 403 });
     }
 

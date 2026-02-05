@@ -62,7 +62,6 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "users" | "payments">("overview");
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
-  const [_isFirstAdmin, setIsFirstAdmin] = useState(false);
 
   useEffect(() => {
     const user = getUser();
@@ -71,45 +70,16 @@ export default function AdminDashboard() {
       return;
     }
 
-    // Check if this is the first user (allow them to become admin)
-    if (!isAdmin()) {
-      checkFirstAdmin(user.id);
-    } else {
-      fetchAdminData(user.id);
-    }
+    // Always try to fetch admin data - the API will check if user has admin access
+    fetchAdminData(user.id, user.email);
   }, [router]);
 
-  const checkFirstAdmin = async (userId: string) => {
-    try {
-      // Try to make first admin
-      const response = await fetch("/api/admin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": userId,
-        },
-        body: JSON.stringify({ action: "makeFirstAdmin", targetUserId: userId }),
-      });
-
-      if (response.ok) {
-        setIsFirstAdmin(true);
-        // Refresh page to load admin data
-        window.location.reload();
-      } else {
-        setError("Access denied. Admin privileges required.");
-        setLoading(false);
-      }
-    } catch {
-      setError("Failed to verify admin status");
-      setLoading(false);
-    }
-  };
-
-  const fetchAdminData = async (userId: string) => {
+  const fetchAdminData = async (userId: string, email: string) => {
     try {
       const response = await fetch("/api/admin", {
         headers: {
           "x-user-id": userId,
+          "x-user-email": email,
         },
       });
 
