@@ -21,7 +21,7 @@ export default function FAQ() {
             <span className="gradient-text">Questions</span>
           </h2>
           <p className="text-xl text-foreground-secondary">
-            Everything you need to know about Angi
+            Everything you need to know about Angi Deck
           </p>
         </motion.div>
 

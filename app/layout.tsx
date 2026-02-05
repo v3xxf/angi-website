@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Angi - Your AI Agent Army Awaits",
-  description: "100+ specialized AI agents working 24/7 for your success. Command your personal team of AI specialists.",
-  keywords: ["AI", "agents", "productivity", "automation", "team", "Jarvis", "AI assistants"],
+  title: "Angi Deck - Your AI Agent Army Awaits | Zenguard Headquarters",
+  description: "100+ specialized AI agents working 24/7 for your success. Command your personal team of AI specialists. Part of Zenguard Headquarters.",
+  keywords: ["AI", "agents", "productivity", "automation", "team", "Jarvis", "AI assistants", "Zenguard"],
   openGraph: {
-    title: "Angi - Your AI Agent Army Awaits",
-    description: "100+ specialized AI agents working 24/7 for your success.",
+    title: "Angi Deck - Your AI Agent Army Awaits | Zenguard Headquarters",
+    description: "100+ specialized AI agents working 24/7 for your success. Part of Zenguard Headquarters.",
     type: "website",
   },
 };

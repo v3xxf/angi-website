@@ -6,7 +6,7 @@ const features = [
   {
     icon: "🧠",
     title: "Proactive Brain",
-    description: "Angi doesn't just respond — she anticipates your needs and takes action before you ask.",
+    description: "Angi Deck doesn't just respond — she anticipates your needs and takes action before you ask.",
   },
   {
     icon: "🔗",

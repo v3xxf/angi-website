@@ -46,7 +46,7 @@ export default function GlobalUsers() {
             Trusted <span className="gradient-text">Worldwide</span>
           </h2>
           <p className="text-xl text-foreground-secondary max-w-2xl mx-auto">
-            Join thousands of users across the globe who are transforming their work with Angi
+            Join thousands of users across the globe who are transforming their work with Angi Deck
           </p>
         </motion.div>
 

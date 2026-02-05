@@ -96,7 +96,7 @@ export default function HeroWarRoom() {
                   ))}
                 </div>
                 <span>
-                  <span className="text-white font-medium">4,800+ professionals</span> already using Angi
+                  <span className="text-white font-medium">4,800+ professionals</span> already using Angi Deck
                 </span>
               </div>
             </motion.div>
@@ -117,7 +117,7 @@ export default function HeroWarRoom() {
               <LiveStatsCounter 
                 baseValue={2847} 
                 incrementPerSecond={0.1}
-                label="teams using Angi" 
+                label="teams using Angi Deck" 
               />
             </motion.div>
           </div>

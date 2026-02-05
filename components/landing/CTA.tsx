@@ -22,7 +22,7 @@ export default function CTA() {
             <span className="gradient-text">Team?</span>
           </h2>
           <p className="text-xl text-foreground-secondary mb-8 max-w-2xl mx-auto">
-            Join thousands of entrepreneurs and professionals who are getting early access to Angi. Launch date: March 3rd, 2026.
+            Join thousands of entrepreneurs and professionals who are getting early access to Angi Deck. Launch date: March 3rd, 2026.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

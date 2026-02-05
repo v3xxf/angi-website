@@ -29,7 +29,7 @@ export default function CommandCenter() {
   };
 
   return (
-    <section className="py-32 bg-background-secondary relative overflow-hidden">
+    <section id="features" className="py-32 bg-background-secondary relative overflow-hidden">
       {/* Scan lines overlay */}
       <div className="absolute inset-0 scan-lines" />
       

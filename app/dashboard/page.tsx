@@ -7,7 +7,7 @@ import { pricingTiers, currencySymbols, LAUNCH_DATE } from "@/lib/constants";
 import CountdownTimer from "@/components/dashboard/CountdownTimer";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
-import { getUser, signOut, User } from "@/lib/auth";
+import { getUser, signOut, User, isAdmin } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 
 type Currency = "USD" | "INR";
@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState<Currency>("INR");
   const [isYearly, setIsYearly] = useState(false);
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
 
   useEffect(() => {
     const currentUser = getUser();
@@ -26,6 +27,7 @@ export default function DashboardPage() {
       return;
     }
     setUser(currentUser);
+    setUserIsAdmin(isAdmin());
     setLoading(false);
   }, [router]);
 
@@ -71,10 +73,18 @@ export default function DashboardPage() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-hud-blue to-hud-purple flex items-center justify-center">
                 <span className="text-white font-bold text-xl">A</span>
               </div>
-              <span className="text-xl font-bold gradient-text">Angi</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold gradient-text leading-tight">Angi Deck</span>
+                <span className="text-[9px] text-hud-cyan/70 tracking-wider">ZENGUARD HEADQUARTERS</span>
+              </div>
             </Link>
 
             <div className="flex items-center gap-4">
+              {userIsAdmin && (
+                <Link href="/admin" className="text-red-400 hover:text-red-300 text-sm font-medium transition">
+                  Admin Panel
+                </Link>
+              )}
               <span className="text-foreground-secondary text-sm hidden sm:block">
                 {user?.email}
               </span>
@@ -331,10 +341,18 @@ export default function DashboardPage() {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-hud-blue to-hud-purple flex items-center justify-center">
               <span className="text-white font-bold text-xl">A</span>
             </div>
-            <span className="text-xl font-bold gradient-text">Angi</span>
+            <div className="flex flex-col">
+              <span className="text-xl font-bold gradient-text leading-tight">Angi Deck</span>
+              <span className="text-[9px] text-hud-cyan/70 tracking-wider">ZENGUARD HEADQUARTERS</span>
+            </div>
           </Link>
 
           <div className="flex items-center gap-4">
+            {userIsAdmin && (
+              <Link href="/admin" className="text-red-400 hover:text-red-300 text-sm font-medium transition">
+                Admin Panel
+              </Link>
+            )}
             <span className="text-foreground-secondary text-sm hidden sm:block">
               {user?.email}
             </span>
@@ -457,7 +475,7 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h1 className="text-3xl font-bold mb-4">Welcome to Angi!</h1>
+              <h1 className="text-3xl font-bold mb-4">Welcome to Angi Deck!</h1>
               <p className="text-foreground-secondary mb-8">
                 Your AI team is ready. Start a conversation to begin.
               </p>

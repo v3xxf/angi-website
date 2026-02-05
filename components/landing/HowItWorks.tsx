@@ -5,13 +5,13 @@ import { motion } from "framer-motion";
 const steps = [
   {
     number: "01",
-    title: "Tell Angi what you need",
+    title: "Tell Angi Deck what you need",
     description: "Just chat naturally. Explain what you're working on, what you need help with, or what's on your mind.",
   },
   {
     number: "02",
     title: "She assigns the right agent",
-    description: "Angi understands your request and routes it to the perfect specialist — or handles it herself.",
+    description: "Angi Deck understands your request and routes it to the perfect specialist — or handles it herself.",
   },
   {
     number: "03",

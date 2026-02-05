@@ -140,7 +140,7 @@ export default function ImmersiveFooter() {
             Join the <span className="gradient-text">Revolution</span>
           </h3>
           <p className="text-foreground-secondary mb-6 max-w-xl mx-auto">
-            Be the first to know when Angi launches. Early access, exclusive updates, and special perks.
+            Be the first to know when Angi Deck launches. Early access, exclusive updates, and special perks.
           </p>
           
           {isSubscribed ? (
@@ -182,11 +182,14 @@ export default function ImmersiveFooter() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-hud-blue to-hud-purple flex items-center justify-center">
                 <span className="text-white font-bold text-lg">A</span>
               </div>
-              <span className="text-xl font-bold gradient-text">Angi</span>
+              <span className="text-xl font-bold gradient-text">Angi Deck</span>
             </Link>
-            <p className="text-sm text-foreground-secondary">
+            <p className="text-sm text-foreground-secondary mb-3">
               Your AI-powered team of 100+ agents, ready 24/7.
             </p>
+            <div className="inline-block px-3 py-1 rounded border border-hud-cyan/30 bg-hud-cyan/5">
+              <span className="text-[10px] text-hud-cyan tracking-[0.15em]">PART OF ZENGUARD HEADQUARTERS</span>
+            </div>
           </div>
 
           {/* Product */}
@@ -249,7 +252,7 @@ export default function ImmersiveFooter() {
         {/* Bottom bar */}
         <div className="pt-8 border-t border-hud-blue/20 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-foreground-secondary">
-            © 2026 Angi AI. All rights reserved.
+            © 2026 Angi Deck. A Zenguard Headquarters Company. All rights reserved.
           </div>
           
           <div className="flex items-center gap-4">

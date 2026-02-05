@@ -5,8 +5,12 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  phone: string;
+  role: "user" | "admin";
   plan: "free" | "starter" | "pro" | "enterprise";
   currency?: "USD" | "INR";
+  signupIp?: string;
+  lastLoginIp?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -41,13 +45,14 @@ function clearUser(): void {
 export async function signUp(
   email: string,
   password: string,
-  name: string
+  name: string,
+  phone: string
 ): Promise<{ user: User | null; error: AuthError | null }> {
   try {
     const response = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "signup", email, password, name }),
+      body: JSON.stringify({ action: "signup", email, password, name, phone }),
     });
 
     const data = await response.json();
@@ -61,6 +66,12 @@ export async function signUp(
   } catch {
     return { user: null, error: { message: "Network error. Please try again." } };
   }
+}
+
+// Check if current user is admin
+export function isAdmin(): boolean {
+  const user = getUser();
+  return user !== null && user.role === "admin";
 }
 
 // Sign in an existing user

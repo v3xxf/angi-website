@@ -49,7 +49,7 @@ export default function LiveChat() {
     {
       id: "1",
       type: "angi",
-      text: "Hey! I'm Angi, your AI team coordinator. What can I help you with today?",
+      text: "Hey! I'm Angi Deck, your AI team coordinator. What can I help you with today?",
       timestamp: new Date(),
     },
   ]);
@@ -153,7 +153,7 @@ export default function LiveChat() {
                   <span className="text-white font-bold">A</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold">Talk to Angi</h3>
+                  <h3 className="font-semibold">Talk to Angi Deck</h3>
                   <p className="text-xs text-foreground-secondary flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-green-400" />
                     Online • Try the demo

@@ -95,7 +95,7 @@ function CheckoutContent() {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
         amount: amountInSmallestUnit,
         currency,
-        name: "Angi AI",
+        name: "Angi Deck",
         description: `${plan.name} Plan - ${isYearly ? "Yearly" : "Monthly"}`,
         order_id: orderData.id,
         prefill: {

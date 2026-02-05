@@ -98,7 +98,7 @@ export default function CheckoutPage() {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
         amount: order.amount,
         currency: order.currency,
-        name: "Angi AI",
+        name: "Angi Deck",
         description: `${tier.name} Plan - ${isYearly ? "Yearly" : "Monthly"}`,
         order_id: order.id,
         handler: async function (response: RazorpayResponse) {

@@ -13,7 +13,7 @@ export default function Footer() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-light to-blue-700 flex items-center justify-center">
                 <span className="text-white font-bold text-xl">A</span>
               </div>
-              <span className="text-xl font-bold">Angi</span>
+              <span className="text-xl font-bold">Angi Deck</span>
             </Link>
             <p className="text-foreground-secondary text-sm">
               Your AI team, one conversation away.
@@ -98,7 +98,7 @@ export default function Footer() {
         </div>
 
         <div className="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-border text-sm text-foreground-secondary">
-          <p>&copy; 2026 Angi. All rights reserved.</p>
+          <p>&copy; 2026 Angi Deck. A Zenguard Headquarters Company. All rights reserved.</p>
           <div className="flex items-center gap-6 mt-4 md:mt-0">
             <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
               Twitter

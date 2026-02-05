@@ -19,9 +19,13 @@ export interface StoredUser {
   id: string;
   email: string;
   name: string;
+  phone: string;
   passwordHash: string;
+  role: "user" | "admin";
   plan: "free" | "starter" | "pro" | "enterprise";
   currency?: "USD" | "INR";
+  signupIp?: string;
+  lastLoginIp?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -95,7 +99,10 @@ export async function getUserById(id: string): Promise<StoredUser | null> {
 export async function createUser(
   email: string,
   password: string,
-  name: string
+  name: string,
+  phone: string,
+  signupIp?: string,
+  role: "user" | "admin" = "user"
 ): Promise<{ user: StoredUser | null; error: string | null }> {
   const users = await getUsers();
 
@@ -114,12 +121,21 @@ export async function createUser(
     return { user: null, error: "Password must be at least 6 characters" };
   }
 
+  // Validate phone (must be at least 10 digits)
+  const phoneDigits = phone.replace(/\D/g, "");
+  if (phoneDigits.length < 10) {
+    return { user: null, error: "Please enter a valid phone number (at least 10 digits)" };
+  }
+
   const newUser: StoredUser = {
     id: generateId(),
     email: email.toLowerCase(),
     name: name || email.split("@")[0],
+    phone: phone,
     passwordHash: hashPassword(password),
+    role: role,
     plan: "free",
+    signupIp: signupIp,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -168,6 +184,42 @@ export async function updateUserPlan(
     users[userIndex].currency = currency;
   }
 
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Update last login IP
+export async function updateLastLoginIp(
+  userId: string,
+  ip: string
+): Promise<void> {
+  const users = await getUsers();
+  const userIndex = users.findIndex((u) => u.id === userId);
+
+  if (userIndex !== -1) {
+    users[userIndex].lastLoginIp = ip;
+    users[userIndex].updatedAt = new Date().toISOString();
+    await saveUsers(users);
+  }
+}
+
+// Check if user is admin
+export async function isUserAdmin(userId: string): Promise<boolean> {
+  const user = await getUserById(userId);
+  return user?.role === "admin";
+}
+
+// Make user an admin
+export async function makeUserAdmin(userId: string): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const userIndex = users.findIndex((u) => u.id === userId);
+
+  if (userIndex === -1) {
+    return { success: false, error: "User not found" };
+  }
+
+  users[userIndex].role = "admin";
+  users[userIndex].updatedAt = new Date().toISOString();
   await saveUsers(users);
   return { success: true, error: null };
 }

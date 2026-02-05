@@ -16,6 +16,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +27,15 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     try {
       if (mode === "signup") {
-        const result = await signUp(email, password, name);
+        // Validate phone number (at least 10 digits)
+        const phoneDigits = phone.replace(/\D/g, "");
+        if (phoneDigits.length < 10) {
+          setError("Please enter a valid phone number (at least 10 digits)");
+          setLoading(false);
+          return;
+        }
+        
+        const result = await signUp(email, password, name, phone);
         if (result.error) {
           setError(result.error.message);
         } else {
@@ -55,14 +64,15 @@ export default function AuthForm({ mode }: AuthFormProps) {
     >
       <div className="hud-panel p-8">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
+          <Link href="/" className="inline-flex flex-col items-center gap-2 mb-6">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-hud-blue to-hud-purple flex items-center justify-center shadow-lg shadow-hud-blue/25">
               <span className="text-white font-bold text-2xl">A</span>
             </div>
-            <span className="text-2xl font-bold gradient-text">Angi</span>
+            <span className="text-2xl font-bold gradient-text">Angi Deck</span>
+            <span className="text-[10px] text-hud-cyan/70 tracking-[0.2em] -mt-1">PART OF ZENGUARD HEADQUARTERS</span>
           </Link>
           <h1 className="text-2xl font-bold mb-2">
-            {mode === "login" ? "Welcome Back" : "Join Angi"}
+            {mode === "login" ? "Welcome Back" : "Join Angi Deck"}
           </h1>
           <p className="text-foreground-secondary">
             {mode === "login"
@@ -83,19 +93,37 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "signup" && (
-            <div>
-              <label className="block text-sm font-medium mb-2 text-foreground-secondary">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full px-4 py-3 rounded-lg bg-background/50 border border-hud-blue/30 focus:border-hud-cyan focus:outline-none focus:shadow-[0_0_10px_rgba(0,255,242,0.2)] transition-all text-white placeholder-foreground-secondary"
-                placeholder="Your name"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-2 text-foreground-secondary">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 rounded-lg bg-background/50 border border-hud-blue/30 focus:border-hud-cyan focus:outline-none focus:shadow-[0_0_10px_rgba(0,255,242,0.2)] transition-all text-white placeholder-foreground-secondary"
+                  placeholder="Your name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2 text-foreground-secondary">
+                  Phone Number <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 rounded-lg bg-background/50 border border-hud-blue/30 focus:border-hud-cyan focus:outline-none focus:shadow-[0_0_10px_rgba(0,255,242,0.2)] transition-all text-white placeholder-foreground-secondary"
+                  placeholder="+91 9876543210"
+                />
+                <p className="text-xs text-foreground-secondary mt-1">
+                  Required for account verification
+                </p>
+              </div>
+            </>
           )}
 
           <div>

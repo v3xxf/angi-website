@@ -185,10 +185,10 @@ export default function VoiceCommand() {
             VOICE INTERFACE
           </span>
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Talk to <span className="gradient-text">Angi</span>
+            Talk to <span className="gradient-text">Angi Deck</span>
           </h2>
           <p className="text-xl text-foreground-secondary max-w-2xl mx-auto">
-            Just speak your command. Watch Angi deploy the right agents instantly.
+            Just speak your command. Watch Angi Deck deploy the right agents instantly.
           </p>
         </motion.div>
 

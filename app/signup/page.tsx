@@ -55,9 +55,12 @@ export default function SignupPage() {
               Meet Your New{" "}
               <span className="gradient-text">AI Team</span>
             </h1>
-            <p className="text-xl text-foreground-secondary mb-10 max-w-lg">
-              Join thousands using Angi to supercharge their productivity with 100+ specialized AI agents.
+            <p className="text-xl text-foreground-secondary mb-8 max-w-lg">
+              Join thousands using Angi Deck to supercharge their productivity with 100+ specialized AI agents.
             </p>
+            <div className="inline-block px-3 py-1 rounded border border-hud-cyan/30 bg-hud-cyan/5 mb-8">
+              <span className="text-[10px] text-hud-cyan tracking-[0.15em]">PART OF ZENGUARD HEADQUARTERS</span>
+            </div>
 
             {/* Features grid */}
             <div className="grid grid-cols-2 gap-4 mb-10">
@@ -119,15 +122,16 @@ export default function SignupPage() {
           <div className="w-full max-w-md">
             {/* Mobile header */}
             <div className="lg:hidden text-center mb-8">
-              <Link href="/" className="inline-flex items-center gap-2 mb-4">
+              <Link href="/" className="inline-flex flex-col items-center gap-2 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-hud-blue to-hud-purple flex items-center justify-center">
                   <span className="text-white font-bold text-xl">A</span>
                 </div>
-                <span className="text-xl font-bold gradient-text">Angi</span>
+                <span className="text-xl font-bold gradient-text">Angi Deck</span>
+                <span className="text-[9px] text-hud-cyan/70 tracking-[0.15em]">PART OF ZENGUARD HEADQUARTERS</span>
               </Link>
               <h1 className="text-2xl font-bold mb-2">Create Your Account</h1>
               <p className="text-foreground-secondary text-sm">
-                Join thousands using Angi
+                Join thousands using Angi Deck
               </p>
             </div>
 

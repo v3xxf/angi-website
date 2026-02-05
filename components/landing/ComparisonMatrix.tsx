@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 
 const competitors = [
-  { name: "Angi", isUs: true },
+  { name: "Angi Deck", isUs: true },
   { name: "ChatGPT", isUs: false },
   { name: "Jasper", isUs: false },
   { name: "Others", isUs: false },
@@ -46,7 +46,7 @@ export default function ComparisonMatrix() {
             COMPETITIVE ANALYSIS
           </span>
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Why <span className="gradient-text">Angi</span> Wins
+            Why <span className="gradient-text">Angi Deck</span> Wins
           </h2>
           <p className="text-xl text-foreground-secondary max-w-2xl mx-auto">
             See how we stack up against the competition
@@ -175,7 +175,7 @@ export default function ComparisonMatrix() {
                 <div className="flex items-center gap-8">
                   <div className="text-center">
                     <div className="text-3xl font-bold gradient-text">14/14</div>
-                    <div className="text-xs text-foreground-secondary">Angi</div>
+                    <div className="text-xs text-foreground-secondary">Angi Deck</div>
                   </div>
                   <div className="text-center">
                     <div className="text-3xl font-bold text-foreground-secondary">4/14</div>
@@ -193,7 +193,7 @@ export default function ComparisonMatrix() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                Get Started with Angi
+                Get Started with Angi Deck
               </motion.button>
             </div>
           </div>

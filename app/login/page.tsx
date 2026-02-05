@@ -37,14 +37,19 @@ export default function LoginPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="mt-8 flex flex-wrap justify-center gap-4 text-xs text-foreground-secondary"
+          className="mt-8 flex flex-col items-center gap-4"
         >
-          <span className="flex items-center gap-1">
-            <span className="text-green-400">🔒</span> Secure login
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-green-400">✓</span> Your data is safe
-          </span>
+          <div className="flex flex-wrap justify-center gap-4 text-xs text-foreground-secondary">
+            <span className="flex items-center gap-1">
+              <span className="text-green-400">🔒</span> Secure login
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-green-400">✓</span> Your data is safe
+            </span>
+          </div>
+          <div className="inline-block px-3 py-1 rounded border border-hud-cyan/30 bg-hud-cyan/5">
+            <span className="text-[9px] text-hud-cyan tracking-[0.15em]">PART OF ZENGUARD HEADQUARTERS</span>
+          </div>
         </motion.div>
       </div>
     </main>
