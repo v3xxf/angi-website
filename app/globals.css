@@ -1,0 +1,212 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-primary: #050510;
+  --bg-secondary: #0a0a1a;
+  --bg-card: #0f0f23;
+  --hud-blue: #00d4ff;
+  --hud-cyan: #00fff2;
+  --hud-purple: #a855f7;
+  --hud-glow: rgba(0, 212, 255, 0.3);
+  --scan-line: rgba(0, 255, 242, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --border: rgba(0, 212, 255, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Jarvis-style utilities */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  /* Gradient text - Jarvis cyan */
+  .gradient-text {
+    background-image: linear-gradient(135deg, #00d4ff 0%, #00fff2 50%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .gradient-text-cyan {
+    background-image: linear-gradient(90deg, #00d4ff, #00fff2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Glassmorphism with HUD glow */
+  .glass {
+    @apply backdrop-blur-xl;
+    background: rgba(10, 10, 26, 0.8);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+  }
+  
+  .glass-card {
+    @apply backdrop-blur-xl rounded-xl;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.05) 0%, rgba(15, 15, 35, 0.9) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.1), inset 0 0 20px rgba(0, 212, 255, 0.05);
+  }
+  
+  /* HUD panel style */
+  .hud-panel {
+    @apply relative overflow-hidden rounded-lg;
+    background: linear-gradient(180deg, rgba(0, 212, 255, 0.1) 0%, rgba(10, 10, 26, 0.95) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.2), inset 0 1px 0 rgba(0, 212, 255, 0.2);
+  }
+  
+  .hud-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--hud-cyan), transparent);
+  }
+  
+  /* Neon glow effects */
+  .neon-glow {
+    text-shadow: 0 0 10px var(--hud-blue), 0 0 20px var(--hud-blue), 0 0 30px var(--hud-blue);
+  }
+  
+  .neon-border {
+    box-shadow: 0 0 5px var(--hud-blue), 0 0 10px var(--hud-blue), inset 0 0 5px rgba(0, 212, 255, 0.1);
+  }
+  
+  /* Scan line overlay */
+  .scan-lines {
+    @apply pointer-events-none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 212, 255, 0.03) 2px,
+      rgba(0, 212, 255, 0.03) 4px
+    );
+  }
+  
+  /* Holographic effect */
+  .holographic {
+    background: linear-gradient(
+      135deg,
+      rgba(0, 212, 255, 0.1) 0%,
+      rgba(168, 85, 247, 0.1) 25%,
+      rgba(0, 255, 242, 0.1) 50%,
+      rgba(168, 85, 247, 0.1) 75%,
+      rgba(0, 212, 255, 0.1) 100%
+    );
+    background-size: 400% 400%;
+    animation: gradient 8s ease infinite;
+  }
+  
+  /* Circuit pattern background */
+  .circuit-bg {
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2300d4ff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  
+  /* Data stream effect */
+  .data-stream {
+    background: linear-gradient(180deg, 
+      transparent 0%, 
+      rgba(0, 212, 255, 0.05) 50%, 
+      transparent 100%
+    );
+    background-size: 100% 200%;
+    animation: dataStream 3s linear infinite;
+  }
+  
+  /* Glitch effect */
+  .glitch {
+    animation: glitch 0.3s infinite;
+  }
+  
+  /* HUD font */
+  .font-hud {
+    font-family: 'Orbitron', 'Inter', sans-serif;
+    letter-spacing: 0.05em;
+  }
+  
+  /* Animated border */
+  .animated-border {
+    position: relative;
+  }
+  
+  .animated-border::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(90deg, var(--hud-blue), var(--hud-cyan), var(--hud-purple), var(--hud-cyan), var(--hud-blue));
+    background-size: 300% 100%;
+    animation: gradient 4s linear infinite;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}
+
+/* Custom scrollbar - Jarvis style */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--hud-blue), var(--hud-purple));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hud-cyan);
+}
+
+/* Selection color */
+::selection {
+  background: rgba(0, 212, 255, 0.3);
+  color: white;
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid var(--hud-blue);
+  outline-offset: 2px;
+}
+
+/* Keyframes */
+@keyframes dataStream {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 0% -200%; }
+}
+
+@keyframes scanPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
