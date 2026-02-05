@@ -7,39 +7,8 @@ import { pricingTiers } from "@/lib/constants";
 import { formatPrice } from "@/lib/utils";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
-
-declare global {
-  interface Window {
-    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
-  }
-}
-
-interface RazorpayOptions {
-  key: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  order_id: string;
-  handler: (response: RazorpayResponse) => void;
-  prefill: {
-    name: string;
-    email: string;
-  };
-  theme: {
-    color: string;
-  };
-}
-
-interface RazorpayInstance {
-  open: () => void;
-}
-
-interface RazorpayResponse {
-  razorpay_payment_id: string;
-  razorpay_order_id: string;
-  razorpay_signature: string;
-}
+import "@/lib/razorpay-types";
+import type { RazorpayResponse } from "@/lib/razorpay-types";
 
 export default function CheckoutPage() {
   const params = useParams();

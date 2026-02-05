@@ -12,8 +12,8 @@ function BrainNodes({ isProcessing }: { isProcessing: boolean }) {
   
   const nodeCount = 300;
   
-  const [positions] = useMemo(() => {
-    const positions = new Float32Array(nodeCount * 3);
+  const positions = useMemo(() => {
+    const pos = new Float32Array(nodeCount * 3);
     
     for (let i = 0; i < nodeCount; i++) {
       const i3 = i * 3;
@@ -23,14 +23,12 @@ function BrainNodes({ isProcessing }: { isProcessing: boolean }) {
       const phi = Math.acos(2 * Math.random() - 1);
       const r = 3 + Math.random() * 1.5;
       
-      positions[i3] = r * Math.sin(phi) * Math.cos(theta) * 1.2; // wider
-      positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.9; // shorter
-      positions[i3 + 2] = r * Math.cos(phi);
-      
-      sizes[i] = 0.02 + Math.random() * 0.03;
+      pos[i3] = r * Math.sin(phi) * Math.cos(theta) * 1.2; // wider
+      pos[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.9; // shorter
+      pos[i3 + 2] = r * Math.cos(phi);
     }
     
-    return [positions, sizes];
+    return pos;
   }, []);
 
   useFrame((state) => {

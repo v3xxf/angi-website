@@ -8,43 +8,10 @@ import { pricingTiers, currencySymbols } from "@/lib/constants";
 import { agents } from "@/lib/agents-data";
 import { getUser, updateUserPlan, User } from "@/lib/auth";
 import Button from "@/components/ui/Button";
+import "@/lib/razorpay-types";
+import type { RazorpayResponse } from "@/lib/razorpay-types";
 
 type Currency = "USD" | "INR";
-
-// Razorpay types
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  interface Window {
-    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
-  }
-}
-
-interface RazorpayOptions {
-  key: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  order_id: string;
-  handler: (response: RazorpayResponse) => void;
-  prefill: {
-    email?: string;
-    name?: string;
-  };
-  theme: {
-    color: string;
-  };
-}
-
-interface RazorpayResponse {
-  razorpay_payment_id: string;
-  razorpay_order_id: string;
-  razorpay_signature: string;
-}
-
-interface RazorpayInstance {
-  open: () => void;
-}
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
