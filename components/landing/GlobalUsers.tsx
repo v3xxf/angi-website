@@ -2,15 +2,17 @@
 
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import Button from "../ui/Button";
 
 // Dynamic import for 3D Globe to avoid SSR issues
 const Globe = dynamic(() => import("../3d/Globe"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[500px] flex items-center justify-center">
+    <div className="w-full h-[600px] flex items-center justify-center bg-gradient-to-b from-hud-blue/5 to-transparent">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-hud-cyan/30 border-t-hud-cyan rounded-full animate-spin" />
-        <span className="font-hud text-sm text-foreground-secondary">LOADING GLOBAL DATA...</span>
+        <div className="w-16 h-16 border-4 border-hud-cyan/30 border-t-hud-cyan rounded-full animate-spin" />
+        <span className="font-hud text-sm text-hud-cyan tracking-[0.2em]">INITIALIZING GLOBAL NETWORK...</span>
       </div>
     </div>
   ),
@@ -86,15 +88,20 @@ export default function GlobalUsers() {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mt-8"
+          className="text-center mt-12"
         >
-          <p className="text-foreground-secondary mb-4">
+          <p className="text-foreground-secondary mb-6 text-lg">
             Be part of the AI revolution. Join users from{" "}
             <span className="text-hud-cyan font-bold">India</span>,{" "}
             <span className="text-hud-cyan font-bold">USA</span>,{" "}
             <span className="text-hud-cyan font-bold">UK</span>,{" "}
             <span className="text-hud-cyan font-bold">Singapore</span> and more.
           </p>
+          <Link href="/signup">
+            <Button className="bg-gradient-to-r from-hud-blue to-hud-cyan hover:shadow-xl hover:shadow-hud-cyan/30 text-lg px-8 py-4">
+              🌍 Join the Global Network
+            </Button>
+          </Link>
         </motion.div>
       </div>
     </section>
