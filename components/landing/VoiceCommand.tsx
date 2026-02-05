@@ -4,6 +4,43 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { agents } from "@/lib/agents-data";
 
+// Web Speech API types
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+  length: number;
+}
+
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+  length: number;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
+  }
+}
+
 interface VoiceResponse {
   text: string;
   agents: string[];
@@ -38,7 +75,7 @@ export default function VoiceCommand() {
   const [response, setResponse] = useState<VoiceResponse | null>(null);
   const [waveformHeights, setWaveformHeights] = useState<number[]>(Array(20).fill(4));
   const [deployedAgents, setDeployedAgents] = useState<typeof agents>([]);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   // Initialize speech recognition
   useEffect(() => {

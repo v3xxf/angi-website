@@ -25,7 +25,7 @@ export default function SignupPage() {
       {/* Animated scan line */}
       <motion.div
         className="fixed left-0 right-0 h-px bg-gradient-to-r from-transparent via-hud-cyan/50 to-transparent"
-        animate={{ y: [0, window?.innerHeight || 1000] }}
+        animate={{ y: [0, 1000] }}
         transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
       />
 

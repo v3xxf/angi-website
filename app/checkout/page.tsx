@@ -92,7 +92,7 @@ function CheckoutContent() {
 
       // Open Razorpay checkout
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
         amount: amountInSmallestUnit,
         currency,
         name: "Angi AI",

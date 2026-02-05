@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPayments, getPaymentsByUser } from "@/lib/storage";
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/payments - Get all payments or payments by user
 export async function GET(request: NextRequest) {
   try {
