@@ -4,11 +4,9 @@ import { useEffect, useState, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { pricingTiers, currencySymbols } from "@/lib/constants";
+import { pricingTiers } from "@/lib/constants";
 import { getUser, User } from "@/lib/auth";
 import Button from "@/components/ui/Button";
-
-type Currency = "USD" | "INR";
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
