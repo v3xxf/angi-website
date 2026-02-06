@@ -1,5 +1,5 @@
-// Server-side storage using Vercel Blob for persistence
-import { put, list, del } from "@vercel/blob";
+// Server-side storage using Vercel KV (Redis) for high-concurrency
+import { kv } from "@vercel/kv";
 import crypto from "crypto";
 
 // Admin emails - these users are automatically granted admin role
@@ -41,10 +41,11 @@ export interface Payment {
   completedAt?: string;
 }
 
-// Blob paths
-const USERS_BLOB = "angi-data/users.json";
-const PAYMENTS_BLOB = "angi-data/payments.json";
-const LOCK_BLOB = "angi-data/lock.json";
+// Redis keys
+const USERS_KEY = "angi:users"; // Hash: id -> user JSON
+const EMAILS_KEY = "angi:emails"; // Hash: email -> id
+const PAYMENTS_KEY = "angi:payments"; // Hash: id -> payment JSON
+const ORDERS_KEY = "angi:orders"; // Hash: orderId -> paymentId
 
 // Hash password
 export function hashPassword(password: string): string {
@@ -56,168 +57,46 @@ export function generateId(): string {
   return `${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-// ==================== LOCKING MECHANISM ====================
-
-interface LockData {
-  lockedBy: string;
-  lockedAt: number;
-}
-
-const LOCK_TIMEOUT = 10000; // 10 seconds max lock time
-const LOCK_RETRY_DELAY = 100; // 100ms between retries
-const MAX_RETRIES = 50; // 5 seconds max wait
-
-async function acquireLock(lockId: string): Promise<boolean> {
-  for (let i = 0; i < MAX_RETRIES; i++) {
-    try {
-      // Check if lock exists and is still valid
-      const blobs = await list({ prefix: LOCK_BLOB });
-      if (blobs.blobs.length > 0) {
-        const response = await fetch(blobs.blobs[0].url, { cache: "no-store" });
-        if (response.ok) {
-          const lock: LockData = await response.json();
-          if (Date.now() - lock.lockedAt < LOCK_TIMEOUT) {
-            // Lock is held by another process, wait and retry
-            await new Promise(r => setTimeout(r, LOCK_RETRY_DELAY));
-            continue;
-          }
-        }
-      }
-      
-      // Try to acquire lock
-      const lockData: LockData = { lockedBy: lockId, lockedAt: Date.now() };
-      await put(LOCK_BLOB, JSON.stringify(lockData), {
-        access: "public",
-        addRandomSuffix: false,
-      });
-      
-      // Verify we got the lock
-      await new Promise(r => setTimeout(r, 50));
-      const verifyBlobs = await list({ prefix: LOCK_BLOB });
-      if (verifyBlobs.blobs.length > 0) {
-        const verifyResponse = await fetch(verifyBlobs.blobs[0].url, { cache: "no-store" });
-        if (verifyResponse.ok) {
-          const verifyLock: LockData = await verifyResponse.json();
-          if (verifyLock.lockedBy === lockId) {
-            return true;
-          }
-        }
-      }
-      
-      // Someone else got the lock, retry
-      await new Promise(r => setTimeout(r, LOCK_RETRY_DELAY));
-    } catch {
-      await new Promise(r => setTimeout(r, LOCK_RETRY_DELAY));
-    }
-  }
-  return false;
-}
-
-async function releaseLock(): Promise<void> {
-  try {
-    const blobs = await list({ prefix: LOCK_BLOB });
-    for (const blob of blobs.blobs) {
-      await del(blob.url);
-    }
-  } catch {
-    // Ignore errors when releasing lock
-  }
-}
-
-// ==================== BLOB HELPERS ====================
-
-async function readBlob<T>(path: string): Promise<T | null> {
-  try {
-    const blobs = await list({ prefix: path });
-    if (blobs.blobs.length === 0) {
-      console.log(`Blob ${path} not found`);
-      return null;
-    }
-    // Use the most recent blob if multiple exist
-    const sortedBlobs = blobs.blobs.sort((a, b) => 
-      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-    );
-    const response = await fetch(sortedBlobs[0].url, { cache: "no-store" });
-    if (!response.ok) {
-      console.error(`Failed to fetch blob ${path}: ${response.status}`);
-      return null;
-    }
-    const data = await response.json();
-    console.log(`Read blob ${path}: ${Array.isArray(data) ? data.length : 1} items`);
-    return data;
-  } catch (error) {
-    console.error(`Error reading blob ${path}:`, error);
-    return null;
-  }
-}
-
-async function writeBlob<T>(path: string, data: T): Promise<void> {
-  try {
-    // Write the new data with addRandomSuffix: false to overwrite
-    const result = await put(path, JSON.stringify(data), {
-      access: "public",
-      addRandomSuffix: false,
-    });
-    console.log(`Wrote blob ${path}: ${Array.isArray(data) ? (data as unknown[]).length : 1} items, url: ${result.url}`);
-    
-    // Clean up any duplicate blobs
-    const blobs = await list({ prefix: path });
-    if (blobs.blobs.length > 1) {
-      const sortedBlobs = blobs.blobs.sort((a, b) => 
-        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-      );
-      for (let i = 1; i < sortedBlobs.length; i++) {
-        await del(sortedBlobs[i].url);
-      }
-    }
-  } catch (error) {
-    console.error(`Error writing blob ${path}:`, error);
-    throw error;
-  }
-}
-
-// Atomic read-modify-write operation with locking
-async function atomicUpdate<T>(
-  path: string,
-  updater: (current: T | null) => T
-): Promise<T> {
-  const lockId = generateId();
-  const acquired = await acquireLock(lockId);
-  if (!acquired) {
-    throw new Error("Could not acquire lock - system busy, please try again");
-  }
-  
-  try {
-    const current = await readBlob<T>(path);
-    const updated = updater(current);
-    await writeBlob(path, updated);
-    return updated;
-  } finally {
-    await releaseLock();
-  }
-}
-
 // ==================== USERS ====================
 
 // Get all users
 export async function getUsers(): Promise<StoredUser[]> {
-  const users = await readBlob<StoredUser[]>(USERS_BLOB);
-  return users || [];
+  try {
+    const usersHash = await kv.hgetall<Record<string, StoredUser>>(USERS_KEY);
+    if (!usersHash) return [];
+    return Object.values(usersHash);
+  } catch (error) {
+    console.error("Error getting users:", error);
+    return [];
+  }
 }
 
 // Get user by email
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
-  const users = await getUsers();
-  return users.find((u) => u.email.toLowerCase() === email.toLowerCase()) || null;
+  try {
+    const normalizedEmail = email.toLowerCase();
+    const userId = await kv.hget<string>(EMAILS_KEY, normalizedEmail);
+    if (!userId) return null;
+    const user = await kv.hget<StoredUser>(USERS_KEY, userId);
+    return user || null;
+  } catch (error) {
+    console.error("Error getting user by email:", error);
+    return null;
+  }
 }
 
 // Get user by ID
 export async function getUserById(id: string): Promise<StoredUser | null> {
-  const users = await getUsers();
-  return users.find((u) => u.id === id) || null;
+  try {
+    const user = await kv.hget<StoredUser>(USERS_KEY, id);
+    return user || null;
+  } catch (error) {
+    console.error("Error getting user by ID:", error);
+    return null;
+  }
 }
 
-// Create user (with atomic locking)
+// Create user - ATOMIC
 export async function createUser(
   email: string,
   password: string,
@@ -242,51 +121,54 @@ export async function createUser(
     return { user: null, error: "Please enter a valid phone number (at least 10 digits)" };
   }
 
-  // Auto-assign admin role for designated admin emails
-  const isAdminEmail = ADMIN_EMAILS.some(
-    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
-  );
-  const finalRole = isAdminEmail ? "admin" : role;
-
-  let newUser: StoredUser | null = null;
-  let errorMsg: string | null = null;
+  const normalizedEmail = email.toLowerCase();
 
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      
-      // Check if user exists (inside atomic block)
-      if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) {
-        errorMsg = "An account with this email already exists";
-        return users; // Return unchanged
-      }
+    // Check if email exists (atomic check)
+    const existingUserId = await kv.hget<string>(EMAILS_KEY, normalizedEmail);
+    if (existingUserId) {
+      return { user: null, error: "An account with this email already exists" };
+    }
 
-      newUser = {
-        id: generateId(),
-        email: email.toLowerCase(),
-        name: name || email.split("@")[0],
-        phone: phone,
-        passwordHash: hashPassword(password),
-        role: finalRole,
-        plan: "free",
-        signupIp: signupIp,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+    // Auto-assign admin role for designated admin emails
+    const isAdminEmail = ADMIN_EMAILS.some(
+      (adminEmail) => adminEmail.toLowerCase() === normalizedEmail
+    );
+    const finalRole = isAdminEmail ? "admin" : role;
 
-      console.log("Creating user:", newUser.email, "Total users:", users.length + 1);
-      return [...users, newUser];
-    });
+    const newUser: StoredUser = {
+      id: generateId(),
+      email: normalizedEmail,
+      name: name || email.split("@")[0],
+      phone: phone,
+      passwordHash: hashPassword(password),
+      role: finalRole,
+      plan: "free",
+      signupIp: signupIp,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Use pipeline for atomic multi-command (all or nothing)
+    const pipeline = kv.pipeline();
+    pipeline.hsetnx(EMAILS_KEY, normalizedEmail, newUser.id); // Only set if not exists
+    pipeline.hset(USERS_KEY, { [newUser.id]: newUser });
+    const results = await pipeline.exec();
+
+    // Check if email was already taken (hsetnx returns 0 if key existed)
+    if (results[0] === 0) {
+      // Race condition - email was taken between check and set
+      // Clean up the user we just added
+      await kv.hdel(USERS_KEY, newUser.id);
+      return { user: null, error: "An account with this email already exists" };
+    }
+
+    console.log("User created:", newUser.email, "ID:", newUser.id);
+    return { user: newUser, error: null };
   } catch (error) {
     console.error("Error creating user:", error);
-    return { user: null, error: "System busy, please try again" };
+    return { user: null, error: "Failed to create account. Please try again." };
   }
-
-  if (errorMsg) {
-    return { user: null, error: errorMsg };
-  }
-
-  return { user: newUser, error: null };
 }
 
 // Verify user credentials
@@ -294,100 +176,75 @@ export async function verifyUser(
   email: string,
   password: string
 ): Promise<{ user: StoredUser | null; error: string | null }> {
-  const users = await getUsers();
-  console.log("Verifying user:", email, "Total users in DB:", users.length);
-  
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  try {
+    const user = await getUserByEmail(email);
+    console.log("Verifying user:", email, "Found:", !!user);
 
-  if (!user) {
-    console.log("User not found:", email);
-    return { user: null, error: "No account found with this email" };
-  }
-
-  if (user.disabled) {
-    return { user: null, error: "Your account has been disabled. Contact support." };
-  }
-
-  if (user.passwordHash !== hashPassword(password)) {
-    return { user: null, error: "Incorrect password" };
-  }
-
-  // Auto-promote to admin if email is in admin list
-  const isAdminEmail = ADMIN_EMAILS.some(
-    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
-  );
-  if (isAdminEmail && user.role !== "admin") {
-    try {
-      await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-        const allUsers = currentUsers || [];
-        const idx = allUsers.findIndex((u) => u.id === user.id);
-        if (idx !== -1) {
-          allUsers[idx].role = "admin";
-          allUsers[idx].updatedAt = new Date().toISOString();
-        }
-        return allUsers;
-      });
-      user.role = "admin";
-    } catch {
-      // Non-critical - continue with login
+    if (!user) {
+      return { user: null, error: "No account found with this email" };
     }
-  }
 
-  return { user, error: null };
+    if (user.disabled) {
+      return { user: null, error: "Your account has been disabled. Contact support." };
+    }
+
+    if (user.passwordHash !== hashPassword(password)) {
+      return { user: null, error: "Incorrect password" };
+    }
+
+    // Auto-promote to admin if email is in admin list
+    const isAdminEmail = ADMIN_EMAILS.some(
+      (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
+    );
+    if (isAdminEmail && user.role !== "admin") {
+      user.role = "admin";
+      user.updatedAt = new Date().toISOString();
+      await kv.hset(USERS_KEY, { [user.id]: user });
+    }
+
+    return { user, error: null };
+  } catch (error) {
+    console.error("Error verifying user:", error);
+    return { user: null, error: "Login failed. Please try again." };
+  }
 }
 
-// Update user plan (with atomic locking)
+// Update user plan
 export async function updateUserPlan(
   userId: string,
   plan: "free" | "starter" | "pro" | "enterprise",
   currency?: "USD" | "INR"
 ): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const userIndex = users.findIndex((u) => u.id === userId);
+    const user = await getUserById(userId);
+    if (!user) {
+      return { success: false, error: "User not found" };
+    }
 
-      if (userIndex === -1) {
-        return users;
-      }
+    user.plan = plan;
+    user.updatedAt = new Date().toISOString();
+    user.paidAt = new Date().toISOString();
+    if (currency) {
+      user.currency = currency;
+    }
 
-      found = true;
-      users[userIndex].plan = plan;
-      users[userIndex].updatedAt = new Date().toISOString();
-      users[userIndex].paidAt = new Date().toISOString();
-      if (currency) {
-        users[userIndex].currency = currency;
-      }
-      return users;
-    });
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error updating user plan:", error);
-    return { success: false, error: "System busy, please try again" };
+    return { success: false, error: "Failed to update plan" };
   }
-  
-  if (!found) {
-    return { success: false, error: "User not found" };
-  }
-  return { success: true, error: null };
 }
 
-// Update last login IP (with atomic locking)
-export async function updateLastLoginIp(
-  userId: string,
-  ip: string
-): Promise<void> {
+// Update last login IP
+export async function updateLastLoginIp(userId: string, ip: string): Promise<void> {
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const userIndex = users.findIndex((u) => u.id === userId);
-
-      if (userIndex !== -1) {
-        users[userIndex].lastLoginIp = ip;
-        users[userIndex].updatedAt = new Date().toISOString();
-      }
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (user) {
+      user.lastLoginIp = ip;
+      user.updatedAt = new Date().toISOString();
+      await kv.hset(USERS_KEY, { [user.id]: user });
+    }
   } catch (error) {
     console.error("Error updating last login IP:", error);
   }
@@ -399,43 +256,39 @@ export async function isUserAdmin(userId: string): Promise<boolean> {
   return user?.role === "admin";
 }
 
-// Make user an admin (with atomic locking)
+// Make user an admin
 export async function makeUserAdmin(userId: string): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const userIndex = users.findIndex((u) => u.id === userId);
+    const user = await getUserById(userId);
+    if (!user) {
+      return { success: false, error: "User not found" };
+    }
 
-      if (userIndex === -1) {
-        return users;
-      }
-
-      found = true;
-      users[userIndex].role = "admin";
-      users[userIndex].updatedAt = new Date().toISOString();
-      return users;
-    });
+    user.role = "admin";
+    user.updatedAt = new Date().toISOString();
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error making user admin:", error);
-    return { success: false, error: "System busy, please try again" };
+    return { success: false, error: "Failed to update user" };
   }
-  
-  if (!found) {
-    return { success: false, error: "User not found" };
-  }
-  return { success: true, error: null };
 }
 
 // ==================== PAYMENTS ====================
 
 // Get all payments
 export async function getPayments(): Promise<Payment[]> {
-  const payments = await readBlob<Payment[]>(PAYMENTS_BLOB);
-  return payments || [];
+  try {
+    const paymentsHash = await kv.hgetall<Record<string, Payment>>(PAYMENTS_KEY);
+    if (!paymentsHash) return [];
+    return Object.values(paymentsHash);
+  } catch (error) {
+    console.error("Error getting payments:", error);
+    return [];
+  }
 }
 
-// Create payment record (with atomic locking)
+// Create payment record
 export async function createPayment(
   userId: string,
   email: string,
@@ -456,45 +309,40 @@ export async function createPayment(
     createdAt: new Date().toISOString(),
   };
 
-  await atomicUpdate<Payment[]>(PAYMENTS_BLOB, (currentPayments) => {
-    const payments = currentPayments || [];
-    return [...payments, payment];
-  });
+  const pipeline = kv.pipeline();
+  pipeline.hset(PAYMENTS_KEY, { [payment.id]: payment });
+  pipeline.hset(ORDERS_KEY, { [razorpayOrderId]: payment.id });
+  await pipeline.exec();
 
   return payment;
 }
 
-// Complete payment (with atomic locking)
+// Complete payment
 export async function completePayment(
   razorpayOrderId: string,
   razorpayPaymentId: string
 ): Promise<{ payment: Payment | null; error: string | null }> {
-  let completedPayment: Payment | null = null;
-  
   try {
-    await atomicUpdate<Payment[]>(PAYMENTS_BLOB, (currentPayments) => {
-      const payments = currentPayments || [];
-      const paymentIndex = payments.findIndex((p) => p.razorpayOrderId === razorpayOrderId);
+    const paymentId = await kv.hget<string>(ORDERS_KEY, razorpayOrderId);
+    if (!paymentId) {
+      return { payment: null, error: "Payment not found" };
+    }
 
-      if (paymentIndex === -1) {
-        return payments;
-      }
+    const payment = await kv.hget<Payment>(PAYMENTS_KEY, paymentId);
+    if (!payment) {
+      return { payment: null, error: "Payment not found" };
+    }
 
-      payments[paymentIndex].status = "completed";
-      payments[paymentIndex].razorpayPaymentId = razorpayPaymentId;
-      payments[paymentIndex].completedAt = new Date().toISOString();
-      completedPayment = payments[paymentIndex];
-      return payments;
-    });
+    payment.status = "completed";
+    payment.razorpayPaymentId = razorpayPaymentId;
+    payment.completedAt = new Date().toISOString();
+
+    await kv.hset(PAYMENTS_KEY, { [payment.id]: payment });
+    return { payment, error: null };
   } catch (error) {
     console.error("Error completing payment:", error);
-    return { payment: null, error: "System busy, please try again" };
+    return { payment: null, error: "Failed to complete payment" };
   }
-
-  if (!completedPayment) {
-    return { payment: null, error: "Payment not found" };
-  }
-  return { payment: completedPayment, error: null };
 }
 
 // Get payments by user
@@ -505,79 +353,70 @@ export async function getPaymentsByUser(userId: string): Promise<Payment[]> {
 
 // Get payment by order ID
 export async function getPaymentByOrderId(orderId: string): Promise<Payment | null> {
-  const payments = await getPayments();
-  return payments.find((p) => p.razorpayOrderId === orderId) || null;
+  try {
+    const paymentId = await kv.hget<string>(ORDERS_KEY, orderId);
+    if (!paymentId) return null;
+    const payment = await kv.hget<Payment>(PAYMENTS_KEY, paymentId);
+    return payment || null;
+  } catch (error) {
+    console.error("Error getting payment by order ID:", error);
+    return null;
+  }
 }
 
-// ==================== ADMIN ACTIONS (all with atomic locking) ====================
+// ==================== ADMIN ACTIONS ====================
 
 // Disable a user
 export async function disableUser(
   userId: string,
   reason?: string
 ): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users[idx].disabled = true;
-      users[idx].disabledReason = reason || "Disabled by admin";
-      users[idx].updatedAt = new Date().toISOString();
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    user.disabled = true;
+    user.disabledReason = reason || "Disabled by admin";
+    user.updatedAt = new Date().toISOString();
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error disabling user:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to disable user" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
 
 // Enable a user
-export async function enableUser(
-  userId: string
-): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
+export async function enableUser(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users[idx].disabled = false;
-      users[idx].disabledReason = undefined;
-      users[idx].updatedAt = new Date().toISOString();
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    user.disabled = false;
+    user.disabledReason = undefined;
+    user.updatedAt = new Date().toISOString();
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error enabling user:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to enable user" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
 
 // Remove admin role
-export async function removeAdmin(
-  userId: string
-): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
+export async function removeAdmin(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users[idx].role = "user";
-      users[idx].updatedAt = new Date().toISOString();
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    user.role = "user";
+    user.updatedAt = new Date().toISOString();
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error removing admin:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to update user" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
 
 // Change user plan (admin override)
@@ -585,46 +424,38 @@ export async function adminSetPlan(
   userId: string,
   plan: "free" | "starter" | "pro" | "enterprise"
 ): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users[idx].plan = plan;
-      users[idx].updatedAt = new Date().toISOString();
-      if (plan !== "free") {
-        users[idx].paidAt = new Date().toISOString();
-      }
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    user.plan = plan;
+    user.updatedAt = new Date().toISOString();
+    if (plan !== "free") {
+      user.paidAt = new Date().toISOString();
+    }
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error setting plan:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to update plan" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
 
 // Delete a user
-export async function deleteUser(
-  userId: string
-): Promise<{ success: boolean; error: string | null }> {
-  let found = false;
+export async function deleteUser(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users.splice(idx, 1);
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    const pipeline = kv.pipeline();
+    pipeline.hdel(USERS_KEY, userId);
+    pipeline.hdel(EMAILS_KEY, user.email);
+    await pipeline.exec();
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting user:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to delete user" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
 
 // Reset user password (admin)
@@ -635,20 +466,17 @@ export async function adminResetPassword(
   if (newPassword.length < 6) {
     return { success: false, error: "Password must be at least 6 characters" };
   }
-  let found = false;
+
   try {
-    await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
-      const users = currentUsers || [];
-      const idx = users.findIndex((u) => u.id === userId);
-      if (idx === -1) return users;
-      found = true;
-      users[idx].passwordHash = hashPassword(newPassword);
-      users[idx].updatedAt = new Date().toISOString();
-      return users;
-    });
+    const user = await getUserById(userId);
+    if (!user) return { success: false, error: "User not found" };
+
+    user.passwordHash = hashPassword(newPassword);
+    user.updatedAt = new Date().toISOString();
+    await kv.hset(USERS_KEY, { [user.id]: user });
+    return { success: true, error: null };
   } catch (error) {
     console.error("Error resetting password:", error);
-    return { success: false, error: "System busy" };
+    return { success: false, error: "Failed to reset password" };
   }
-  return found ? { success: true, error: null } : { success: false, error: "User not found" };
 }
