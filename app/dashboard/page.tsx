@@ -7,7 +7,7 @@ import { pricingTiers, currencySymbols, LAUNCH_DATE } from "@/lib/constants";
 import CountdownTimer from "@/components/dashboard/CountdownTimer";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
-import { getUser, signOut, User, isAdmin, refreshUser } from "@/lib/auth";
+import { getUser, signOut, User, refreshUser } from "@/lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Currency = "USD" | "INR";
