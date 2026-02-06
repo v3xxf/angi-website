@@ -1,5 +1,5 @@
-// Server-side storage using Vercel KV (Redis) for high-concurrency
-import { kv } from "@vercel/kv";
+// Server-side storage using MongoDB for high-concurrency
+import { MongoClient, Db } from "mongodb";
 import crypto from "crypto";
 
 // Admin emails - these users are automatically granted admin role
@@ -41,11 +41,31 @@ export interface Payment {
   completedAt?: string;
 }
 
-// Redis keys
-const USERS_KEY = "angi:users"; // Hash: id -> user JSON
-const EMAILS_KEY = "angi:emails"; // Hash: email -> id
-const PAYMENTS_KEY = "angi:payments"; // Hash: id -> payment JSON
-const ORDERS_KEY = "angi:orders"; // Hash: orderId -> paymentId
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || "";
+let cachedClient: MongoClient | null = null;
+let cachedDb: Db | null = null;
+
+async function getDb(): Promise<Db> {
+  if (cachedDb) return cachedDb;
+  
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI environment variable is not set");
+  }
+
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  cachedClient = client;
+  cachedDb = client.db("angideck");
+  
+  // Create indexes for fast lookups
+  await cachedDb.collection("users").createIndex({ email: 1 }, { unique: true });
+  await cachedDb.collection("users").createIndex({ id: 1 }, { unique: true });
+  await cachedDb.collection("payments").createIndex({ id: 1 }, { unique: true });
+  await cachedDb.collection("payments").createIndex({ razorpayOrderId: 1 });
+  
+  return cachedDb;
+}
 
 // Hash password
 export function hashPassword(password: string): string {
@@ -62,9 +82,9 @@ export function generateId(): string {
 // Get all users
 export async function getUsers(): Promise<StoredUser[]> {
   try {
-    const usersHash = await kv.hgetall<Record<string, StoredUser>>(USERS_KEY);
-    if (!usersHash) return [];
-    return Object.values(usersHash);
+    const db = await getDb();
+    const users = await db.collection<StoredUser>("users").find({}).toArray();
+    return users;
   } catch (error) {
     console.error("Error getting users:", error);
     return [];
@@ -74,11 +94,11 @@ export async function getUsers(): Promise<StoredUser[]> {
 // Get user by email
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
   try {
-    const normalizedEmail = email.toLowerCase();
-    const userId = await kv.hget<string>(EMAILS_KEY, normalizedEmail);
-    if (!userId) return null;
-    const user = await kv.hget<StoredUser>(USERS_KEY, userId);
-    return user || null;
+    const db = await getDb();
+    const user = await db.collection<StoredUser>("users").findOne({ 
+      email: email.toLowerCase() 
+    });
+    return user;
   } catch (error) {
     console.error("Error getting user by email:", error);
     return null;
@@ -88,15 +108,16 @@ export async function getUserByEmail(email: string): Promise<StoredUser | null> 
 // Get user by ID
 export async function getUserById(id: string): Promise<StoredUser | null> {
   try {
-    const user = await kv.hget<StoredUser>(USERS_KEY, id);
-    return user || null;
+    const db = await getDb();
+    const user = await db.collection<StoredUser>("users").findOne({ id });
+    return user;
   } catch (error) {
     console.error("Error getting user by ID:", error);
     return null;
   }
 }
 
-// Create user - ATOMIC
+// Create user - ATOMIC with unique index
 export async function createUser(
   email: string,
   password: string,
@@ -123,49 +144,35 @@ export async function createUser(
 
   const normalizedEmail = email.toLowerCase();
 
+  // Auto-assign admin role for designated admin emails
+  const isAdminEmail = ADMIN_EMAILS.some(
+    (adminEmail) => adminEmail.toLowerCase() === normalizedEmail
+  );
+  const finalRole = isAdminEmail ? "admin" : role;
+
+  const newUser: StoredUser = {
+    id: generateId(),
+    email: normalizedEmail,
+    name: name || email.split("@")[0],
+    phone: phone,
+    passwordHash: hashPassword(password),
+    role: finalRole,
+    plan: "free",
+    signupIp: signupIp,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
   try {
-    // Check if email exists (atomic check)
-    const existingUserId = await kv.hget<string>(EMAILS_KEY, normalizedEmail);
-    if (existingUserId) {
-      return { user: null, error: "An account with this email already exists" };
-    }
-
-    // Auto-assign admin role for designated admin emails
-    const isAdminEmail = ADMIN_EMAILS.some(
-      (adminEmail) => adminEmail.toLowerCase() === normalizedEmail
-    );
-    const finalRole = isAdminEmail ? "admin" : role;
-
-    const newUser: StoredUser = {
-      id: generateId(),
-      email: normalizedEmail,
-      name: name || email.split("@")[0],
-      phone: phone,
-      passwordHash: hashPassword(password),
-      role: finalRole,
-      plan: "free",
-      signupIp: signupIp,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Use pipeline for atomic multi-command (all or nothing)
-    const pipeline = kv.pipeline();
-    pipeline.hsetnx(EMAILS_KEY, normalizedEmail, newUser.id); // Only set if not exists
-    pipeline.hset(USERS_KEY, { [newUser.id]: newUser });
-    const results = await pipeline.exec();
-
-    // Check if email was already taken (hsetnx returns 0 if key existed)
-    if (results[0] === 0) {
-      // Race condition - email was taken between check and set
-      // Clean up the user we just added
-      await kv.hdel(USERS_KEY, newUser.id);
-      return { user: null, error: "An account with this email already exists" };
-    }
-
+    const db = await getDb();
+    await db.collection<StoredUser>("users").insertOne(newUser);
     console.log("User created:", newUser.email, "ID:", newUser.id);
     return { user: newUser, error: null };
-  } catch (error) {
+  } catch (error: unknown) {
+    // MongoDB duplicate key error
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      return { user: null, error: "An account with this email already exists" };
+    }
     console.error("Error creating user:", error);
     return { user: null, error: "Failed to create account. Please try again." };
   }
@@ -197,9 +204,12 @@ export async function verifyUser(
       (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
     );
     if (isAdminEmail && user.role !== "admin") {
+      const db = await getDb();
+      await db.collection<StoredUser>("users").updateOne(
+        { id: user.id },
+        { $set: { role: "admin", updatedAt: new Date().toISOString() } }
+      );
       user.role = "admin";
-      user.updatedAt = new Date().toISOString();
-      await kv.hset(USERS_KEY, { [user.id]: user });
     }
 
     return { user, error: null };
@@ -216,19 +226,22 @@ export async function updateUserPlan(
   currency?: "USD" | "INR"
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) {
+    const db = await getDb();
+    const updateData: Record<string, unknown> = {
+      plan,
+      updatedAt: new Date().toISOString(),
+      paidAt: new Date().toISOString(),
+    };
+    if (currency) updateData.currency = currency;
+
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
       return { success: false, error: "User not found" };
     }
-
-    user.plan = plan;
-    user.updatedAt = new Date().toISOString();
-    user.paidAt = new Date().toISOString();
-    if (currency) {
-      user.currency = currency;
-    }
-
-    await kv.hset(USERS_KEY, { [user.id]: user });
     return { success: true, error: null };
   } catch (error) {
     console.error("Error updating user plan:", error);
@@ -239,12 +252,11 @@ export async function updateUserPlan(
 // Update last login IP
 export async function updateLastLoginIp(userId: string, ip: string): Promise<void> {
   try {
-    const user = await getUserById(userId);
-    if (user) {
-      user.lastLoginIp = ip;
-      user.updatedAt = new Date().toISOString();
-      await kv.hset(USERS_KEY, { [user.id]: user });
-    }
+    const db = await getDb();
+    await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { $set: { lastLoginIp: ip, updatedAt: new Date().toISOString() } }
+    );
   } catch (error) {
     console.error("Error updating last login IP:", error);
   }
@@ -259,14 +271,15 @@ export async function isUserAdmin(userId: string): Promise<boolean> {
 // Make user an admin
 export async function makeUserAdmin(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) {
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { $set: { role: "admin", updatedAt: new Date().toISOString() } }
+    );
+
+    if (result.matchedCount === 0) {
       return { success: false, error: "User not found" };
     }
-
-    user.role = "admin";
-    user.updatedAt = new Date().toISOString();
-    await kv.hset(USERS_KEY, { [user.id]: user });
     return { success: true, error: null };
   } catch (error) {
     console.error("Error making user admin:", error);
@@ -279,9 +292,9 @@ export async function makeUserAdmin(userId: string): Promise<{ success: boolean;
 // Get all payments
 export async function getPayments(): Promise<Payment[]> {
   try {
-    const paymentsHash = await kv.hgetall<Record<string, Payment>>(PAYMENTS_KEY);
-    if (!paymentsHash) return [];
-    return Object.values(paymentsHash);
+    const db = await getDb();
+    const payments = await db.collection<Payment>("payments").find({}).toArray();
+    return payments;
   } catch (error) {
     console.error("Error getting payments:", error);
     return [];
@@ -309,11 +322,8 @@ export async function createPayment(
     createdAt: new Date().toISOString(),
   };
 
-  const pipeline = kv.pipeline();
-  pipeline.hset(PAYMENTS_KEY, { [payment.id]: payment });
-  pipeline.hset(ORDERS_KEY, { [razorpayOrderId]: payment.id });
-  await pipeline.exec();
-
+  const db = await getDb();
+  await db.collection<Payment>("payments").insertOne(payment);
   return payment;
 }
 
@@ -323,22 +333,23 @@ export async function completePayment(
   razorpayPaymentId: string
 ): Promise<{ payment: Payment | null; error: string | null }> {
   try {
-    const paymentId = await kv.hget<string>(ORDERS_KEY, razorpayOrderId);
-    if (!paymentId) {
+    const db = await getDb();
+    const result = await db.collection<Payment>("payments").findOneAndUpdate(
+      { razorpayOrderId },
+      { 
+        $set: { 
+          status: "completed", 
+          razorpayPaymentId, 
+          completedAt: new Date().toISOString() 
+        } 
+      },
+      { returnDocument: "after" }
+    );
+
+    if (!result) {
       return { payment: null, error: "Payment not found" };
     }
-
-    const payment = await kv.hget<Payment>(PAYMENTS_KEY, paymentId);
-    if (!payment) {
-      return { payment: null, error: "Payment not found" };
-    }
-
-    payment.status = "completed";
-    payment.razorpayPaymentId = razorpayPaymentId;
-    payment.completedAt = new Date().toISOString();
-
-    await kv.hset(PAYMENTS_KEY, { [payment.id]: payment });
-    return { payment, error: null };
+    return { payment: result, error: null };
   } catch (error) {
     console.error("Error completing payment:", error);
     return { payment: null, error: "Failed to complete payment" };
@@ -347,17 +358,22 @@ export async function completePayment(
 
 // Get payments by user
 export async function getPaymentsByUser(userId: string): Promise<Payment[]> {
-  const payments = await getPayments();
-  return payments.filter((p) => p.userId === userId);
+  try {
+    const db = await getDb();
+    const payments = await db.collection<Payment>("payments").find({ userId }).toArray();
+    return payments;
+  } catch (error) {
+    console.error("Error getting payments by user:", error);
+    return [];
+  }
 }
 
 // Get payment by order ID
 export async function getPaymentByOrderId(orderId: string): Promise<Payment | null> {
   try {
-    const paymentId = await kv.hget<string>(ORDERS_KEY, orderId);
-    if (!paymentId) return null;
-    const payment = await kv.hget<Payment>(PAYMENTS_KEY, paymentId);
-    return payment || null;
+    const db = await getDb();
+    const payment = await db.collection<Payment>("payments").findOne({ razorpayOrderId: orderId });
+    return payment;
   } catch (error) {
     console.error("Error getting payment by order ID:", error);
     return null;
@@ -372,13 +388,21 @@ export async function disableUser(
   reason?: string
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { 
+        $set: { 
+          disabled: true, 
+          disabledReason: reason || "Disabled by admin",
+          updatedAt: new Date().toISOString() 
+        } 
+      }
+    );
 
-    user.disabled = true;
-    user.disabledReason = reason || "Disabled by admin";
-    user.updatedAt = new Date().toISOString();
-    await kv.hset(USERS_KEY, { [user.id]: user });
+    if (result.matchedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error disabling user:", error);
@@ -389,13 +413,21 @@ export async function disableUser(
 // Enable a user
 export async function enableUser(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { 
+        $set: { 
+          disabled: false, 
+          updatedAt: new Date().toISOString() 
+        },
+        $unset: { disabledReason: "" }
+      }
+    );
 
-    user.disabled = false;
-    user.disabledReason = undefined;
-    user.updatedAt = new Date().toISOString();
-    await kv.hset(USERS_KEY, { [user.id]: user });
+    if (result.matchedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error enabling user:", error);
@@ -406,12 +438,15 @@ export async function enableUser(userId: string): Promise<{ success: boolean; er
 // Remove admin role
 export async function removeAdmin(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { $set: { role: "user", updatedAt: new Date().toISOString() } }
+    );
 
-    user.role = "user";
-    user.updatedAt = new Date().toISOString();
-    await kv.hset(USERS_KEY, { [user.id]: user });
+    if (result.matchedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error removing admin:", error);
@@ -425,15 +460,23 @@ export async function adminSetPlan(
   plan: "free" | "starter" | "pro" | "enterprise"
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
-
-    user.plan = plan;
-    user.updatedAt = new Date().toISOString();
+    const db = await getDb();
+    const updateData: Record<string, unknown> = {
+      plan,
+      updatedAt: new Date().toISOString(),
+    };
     if (plan !== "free") {
-      user.paidAt = new Date().toISOString();
+      updateData.paidAt = new Date().toISOString();
     }
-    await kv.hset(USERS_KEY, { [user.id]: user });
+
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error setting plan:", error);
@@ -444,13 +487,12 @@ export async function adminSetPlan(
 // Delete a user
 export async function deleteUser(userId: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").deleteOne({ id: userId });
 
-    const pipeline = kv.pipeline();
-    pipeline.hdel(USERS_KEY, userId);
-    pipeline.hdel(EMAILS_KEY, user.email);
-    await pipeline.exec();
+    if (result.deletedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error deleting user:", error);
@@ -468,12 +510,20 @@ export async function adminResetPassword(
   }
 
   try {
-    const user = await getUserById(userId);
-    if (!user) return { success: false, error: "User not found" };
+    const db = await getDb();
+    const result = await db.collection<StoredUser>("users").updateOne(
+      { id: userId },
+      { 
+        $set: { 
+          passwordHash: hashPassword(newPassword), 
+          updatedAt: new Date().toISOString() 
+        } 
+      }
+    );
 
-    user.passwordHash = hashPassword(newPassword);
-    user.updatedAt = new Date().toISOString();
-    await kv.hset(USERS_KEY, { [user.id]: user });
+    if (result.matchedCount === 0) {
+      return { success: false, error: "User not found" };
+    }
     return { success: true, error: null };
   } catch (error) {
     console.error("Error resetting password:", error);
