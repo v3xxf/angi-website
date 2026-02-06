@@ -43,7 +43,7 @@ export interface Payment {
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || "";
-let cachedClient: MongoClient | null = null;
+let _cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 
 async function getDb(): Promise<Db> {
@@ -55,7 +55,7 @@ async function getDb(): Promise<Db> {
 
   const client = new MongoClient(MONGODB_URI);
   await client.connect();
-  cachedClient = client;
+  _cachedClient = client;
   cachedDb = client.db("angideck");
   
   // Create indexes for fast lookups
