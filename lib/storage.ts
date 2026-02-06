@@ -5,6 +5,7 @@ import crypto from "crypto";
 // Admin emails - these users are automatically granted admin role
 const ADMIN_EMAILS = [
   "varunagarwl3169@gmail.com",
+  "v1@gmail.com",
 ];
 
 // Types

@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 // Hardcoded admin emails for reliable access
 const ADMIN_EMAILS = [
   "varunagarwl3169@gmail.com",
+  "v1@gmail.com",
 ];
 
 // Check if email is admin
