@@ -1,21 +1,6 @@
-// Server-side storage using Upstash Redis for persistence
-// Falls back to in-memory storage if Redis is not configured
-
-import { Redis } from "@upstash/redis";
+// Server-side storage using Vercel Blob for persistence
+import { put, list, del } from "@vercel/blob";
 import crypto from "crypto";
-
-// Initialize Redis client if credentials are available
-let redis: Redis | null = null;
-try {
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-  }
-} catch (error) {
-  console.error("Failed to initialize Redis:", error);
-}
 
 // Admin emails - these users are automatically granted admin role
 const ADMIN_EMAILS = [
@@ -53,13 +38,9 @@ export interface Payment {
   completedAt?: string;
 }
 
-// Redis keys
-const USERS_KEY = "angi:users";
-const PAYMENTS_KEY = "angi:payments";
-
-// In-memory fallback (for development without Redis)
-let inMemoryUsers: StoredUser[] = [];
-let inMemoryPayments: Payment[] = [];
+// Blob paths
+const USERS_BLOB = "angi-data/users.json";
+const PAYMENTS_BLOB = "angi-data/payments.json";
 
 // Hash password
 export function hashPassword(password: string): string {
@@ -71,34 +52,52 @@ export function generateId(): string {
   return `${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
+// ==================== BLOB HELPERS ====================
+
+async function readBlob<T>(path: string): Promise<T | null> {
+  try {
+    const blobs = await list({ prefix: path });
+    if (blobs.blobs.length === 0) {
+      return null;
+    }
+    const response = await fetch(blobs.blobs[0].url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.error(`Error reading blob ${path}:`, error);
+    return null;
+  }
+}
+
+async function writeBlob<T>(path: string, data: T): Promise<void> {
+  try {
+    // Delete existing blob first
+    const blobs = await list({ prefix: path });
+    for (const blob of blobs.blobs) {
+      await del(blob.url);
+    }
+    // Write new data
+    await put(path, JSON.stringify(data), {
+      access: "public",
+      addRandomSuffix: false,
+    });
+  } catch (error) {
+    console.error(`Error writing blob ${path}:`, error);
+    throw error;
+  }
+}
+
 // ==================== USERS ====================
 
 // Get all users
 export async function getUsers(): Promise<StoredUser[]> {
-  if (redis) {
-    try {
-      const data = await redis.get<StoredUser[]>(USERS_KEY);
-      return data || [];
-    } catch (error) {
-      console.error("Redis getUsers error:", error);
-      return inMemoryUsers;
-    }
-  }
-  return inMemoryUsers;
+  const users = await readBlob<StoredUser[]>(USERS_BLOB);
+  return users || [];
 }
 
 // Save all users
 async function saveUsers(users: StoredUser[]): Promise<void> {
-  if (redis) {
-    try {
-      await redis.set(USERS_KEY, users);
-    } catch (error) {
-      console.error("Redis saveUsers error:", error);
-      inMemoryUsers = users;
-    }
-  } else {
-    inMemoryUsers = users;
-  }
+  await writeBlob(USERS_BLOB, users);
 }
 
 // Get user by email
@@ -167,7 +166,7 @@ export async function createUser(
   users.push(newUser);
   await saveUsers(users);
 
-  console.log("User created:", newUser.email, "Total users:", users.length, "Using Redis:", !!redis);
+  console.log("User created:", newUser.email, "Total users:", users.length);
 
   return { user: newUser, error: null };
 }
@@ -178,7 +177,7 @@ export async function verifyUser(
   password: string
 ): Promise<{ user: StoredUser | null; error: string | null }> {
   const users = await getUsers();
-  console.log("Verifying user:", email, "Total users in DB:", users.length, "Using Redis:", !!redis);
+  console.log("Verifying user:", email, "Total users in DB:", users.length);
   
   const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
 
@@ -272,30 +271,13 @@ export async function makeUserAdmin(userId: string): Promise<{ success: boolean;
 
 // Get all payments
 export async function getPayments(): Promise<Payment[]> {
-  if (redis) {
-    try {
-      const data = await redis.get<Payment[]>(PAYMENTS_KEY);
-      return data || [];
-    } catch (error) {
-      console.error("Redis getPayments error:", error);
-      return inMemoryPayments;
-    }
-  }
-  return inMemoryPayments;
+  const payments = await readBlob<Payment[]>(PAYMENTS_BLOB);
+  return payments || [];
 }
 
 // Save all payments
 async function savePayments(payments: Payment[]): Promise<void> {
-  if (redis) {
-    try {
-      await redis.set(PAYMENTS_KEY, payments);
-    } catch (error) {
-      console.error("Redis savePayments error:", error);
-      inMemoryPayments = payments;
-    }
-  } else {
-    inMemoryPayments = payments;
-  }
+  await writeBlob(PAYMENTS_BLOB, payments);
 }
 
 // Create payment record
