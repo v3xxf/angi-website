@@ -1,24 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { motion } from "framer-motion";
 import { agents } from "@/lib/agents-data";
 import { pricingTiers, currencySymbols, LAUNCH_DATE } from "@/lib/constants";
 import CountdownTimer from "@/components/dashboard/CountdownTimer";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
-import { getUser, signOut, User, isAdmin } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { getUser, signOut, User, isAdmin, refreshUser } from "@/lib/auth";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Currency = "USD" | "INR";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState<Currency>("INR");
   const [isYearly, setIsYearly] = useState(false);
   const [userIsAdmin, setUserIsAdmin] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   useEffect(() => {
     const currentUser = getUser();
@@ -26,10 +28,31 @@ export default function DashboardPage() {
       router.push("/login");
       return;
     }
-    setUser(currentUser);
-    setUserIsAdmin(isAdmin());
-    setLoading(false);
-  }, [router]);
+
+    // Always refresh user data from server to get latest plan/role
+    const loadFreshData = async () => {
+      const result = await refreshUser();
+      if (result.user) {
+        setUser(result.user);
+        setUserIsAdmin(result.user.role === "admin");
+      } else {
+        // Fallback to localStorage if server is unreachable
+        setUser(currentUser);
+        setUserIsAdmin(isAdmin());
+      }
+
+      // Check if redirected from payment
+      if (searchParams.get("payment") === "success") {
+        setPaymentSuccess(true);
+        // Clear the URL param
+        window.history.replaceState({}, "", "/dashboard");
+      }
+
+      setLoading(false);
+    };
+
+    loadFreshData();
+  }, [router, searchParams]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -330,6 +353,18 @@ export default function DashboardPage() {
   // Paid user view - Show launch countdown and team
   return (
     <main className="min-h-screen bg-background relative overflow-hidden">
+      {/* Payment Success Banner */}
+      {paymentSuccess && (
+        <motion.div
+          initial={{ opacity: 0, y: -40 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-green-500/20 border border-green-500/50 text-green-400 px-8 py-4 rounded-xl backdrop-blur-sm text-center"
+        >
+          <div className="text-lg font-bold mb-1">Payment Successful! 🎉</div>
+          <div className="text-sm text-green-300">Your {user?.plan} plan is now active.</div>
+        </motion.div>
+      )}
+
       {/* Background */}
       <div className="fixed inset-0 circuit-bg opacity-20" />
       <div className="fixed inset-0 bg-gradient-to-b from-hud-blue/5 via-background to-hud-purple/5" />
@@ -487,5 +522,22 @@ export default function DashboardPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-hud-cyan/30 border-t-hud-cyan rounded-full animate-spin" />
+            <span className="text-foreground-secondary font-hud">LOADING...</span>
+          </div>
+        </main>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }
