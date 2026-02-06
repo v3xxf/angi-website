@@ -94,10 +94,13 @@ export default function CheckoutPage() {
         throw new Error(order.error || "Failed to create order");
       }
 
+      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_Rknvjra18CvozT";
+      console.log("Using Razorpay key:", razorpayKey);
+      
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
+        key: razorpayKey,
         amount: order.amount,
-        currency: order.currency,
+        currency: "INR", // Force INR for now
         name: "Angi Deck",
         description: `${tier.name} Plan - ${isYearly ? "Yearly" : "Monthly"}`,
         order_id: order.id,

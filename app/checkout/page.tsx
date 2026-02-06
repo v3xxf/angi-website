@@ -70,13 +70,13 @@ function CheckoutContent() {
     setError("");
 
     try {
-      // Create order on server
+      // Create order on server - Force INR for now
       const orderResponse = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: amountInSmallestUnit,
-          currency,
+          currency: "INR", // Force INR
           plan: plan.id,
           isYearly,
           userId: user.id,
@@ -91,10 +91,13 @@ function CheckoutContent() {
       }
 
       // Open Razorpay checkout
+      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_Rknvjra18CvozT";
+      console.log("Using Razorpay key:", razorpayKey);
+      
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
+        key: razorpayKey,
         amount: amountInSmallestUnit,
-        currency,
+        currency: "INR", // Force INR for now
         name: "Angi Deck",
         description: `${plan.name} Plan - ${isYearly ? "Yearly" : "Monthly"}`,
         order_id: orderData.id,
