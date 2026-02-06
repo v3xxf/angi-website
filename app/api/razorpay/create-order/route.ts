@@ -6,8 +6,17 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    // Trim any whitespace from env vars
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+    
+    // Log key info for debugging (first 10 chars only, hide rest)
+    console.log("Razorpay config:", {
+      keyIdPrefix: keyId?.substring(0, 15) + "...",
+      keyIdLength: keyId?.length,
+      keySecretLength: keySecret?.length,
+      keySecretPrefix: keySecret?.substring(0, 5) + "...",
+    });
     
     if (!keyId || !keySecret) {
       console.error("Razorpay keys missing:", { hasKeyId: !!keyId, hasKeySecret: !!keySecret });
@@ -80,18 +89,30 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(order);
   } catch (error: unknown) {
-    const err = error as { error?: { description?: string }; message?: string; statusCode?: number };
+    // Log the full error for debugging
+    console.error("RAZORPAY ERROR FULL:", error);
+    console.error("RAZORPAY ERROR STRING:", JSON.stringify(error, null, 2));
+    
+    // Try to extract error details
+    const err = error as { 
+      error?: { description?: string; code?: string; reason?: string }; 
+      message?: string; 
+      statusCode?: number;
+      response?: { data?: { error?: { description?: string } } };
+    };
+    
     console.error("Error creating Razorpay order:", {
-      message: err?.message || "Unknown error",
+      message: err?.message,
       description: err?.error?.description,
+      code: err?.error?.code,
+      reason: err?.error?.reason,
       statusCode: err?.statusCode,
-      fullError: JSON.stringify(error),
     });
     
     // Return more specific error message
-    const errorMessage = err?.error?.description || err?.message || "Failed to create order";
+    const errorMessage = err?.error?.description || err?.error?.reason || err?.message || "Failed to create order. Please try again.";
     return NextResponse.json(
-      { error: errorMessage },
+      { error: errorMessage, details: err?.error },
       { status: err?.statusCode || 500 }
     );
   }
