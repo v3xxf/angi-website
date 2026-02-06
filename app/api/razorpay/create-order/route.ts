@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
     // Amount in paise
     const amountInPaise = Math.round(amount);
 
-    // Get the base URL for callback
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.angideck.com";
+    // Hardcode the callback URL
+    const appUrl = "https://www.angideck.com";
 
     // Create payment link via Razorpay API
     const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
         billing: isYearly ? "yearly" : "monthly",
         userId: userId || "guest",
       },
-      callback_url: `${appUrl}/api/razorpay/callback?userId=${userId}&plan=${plan}&currency=INR`,
+      callback_url: `${appUrl}/api/razorpay/callback`,
       callback_method: "get",
     };
 
