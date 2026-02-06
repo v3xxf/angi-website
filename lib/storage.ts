@@ -205,11 +205,6 @@ export async function getUsers(): Promise<StoredUser[]> {
   return users || [];
 }
 
-// Save all users
-async function saveUsers(users: StoredUser[]): Promise<void> {
-  await writeBlob(USERS_BLOB, users);
-}
-
 // Get user by email
 export async function getUserByEmail(email: string): Promise<StoredUser | null> {
   const users = await getUsers();
@@ -322,12 +317,19 @@ export async function verifyUser(
     (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
   );
   if (isAdminEmail && user.role !== "admin") {
-    const userIndex = users.findIndex((u) => u.id === user.id);
-    if (userIndex !== -1) {
-      users[userIndex].role = "admin";
-      users[userIndex].updatedAt = new Date().toISOString();
-      await saveUsers(users);
+    try {
+      await atomicUpdate<StoredUser[]>(USERS_BLOB, (currentUsers) => {
+        const allUsers = currentUsers || [];
+        const idx = allUsers.findIndex((u) => u.id === user.id);
+        if (idx !== -1) {
+          allUsers[idx].role = "admin";
+          allUsers[idx].updatedAt = new Date().toISOString();
+        }
+        return allUsers;
+      });
       user.role = "admin";
+    } catch {
+      // Non-critical - continue with login
     }
   }
 
@@ -431,11 +433,6 @@ export async function makeUserAdmin(userId: string): Promise<{ success: boolean;
 export async function getPayments(): Promise<Payment[]> {
   const payments = await readBlob<Payment[]>(PAYMENTS_BLOB);
   return payments || [];
-}
-
-// Save all payments
-async function savePayments(payments: Payment[]): Promise<void> {
-  await writeBlob(PAYMENTS_BLOB, payments);
 }
 
 // Create payment record (with atomic locking)
