@@ -8,65 +8,72 @@ export async function POST(request: NextRequest) {
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
 
-    console.log("=== RAZORPAY CREATE ORDER ===");
-    console.log("Key ID exists:", !!keyId, "Length:", keyId?.length);
-    console.log("Secret exists:", !!keySecret, "Length:", keySecret?.length);
+    console.log("=== RAZORPAY PAYMENT LINK ===");
+    console.log("Key ID:", keyId ? keyId.substring(0, 12) + "..." : "MISSING");
+    console.log("Secret:", keySecret ? "SET (" + keySecret.length + " chars)" : "MISSING");
 
     if (!keyId || !keySecret) {
-      console.error("Missing Razorpay credentials");
       return NextResponse.json(
-        { error: "Payment system not configured" },
+        { error: "Payment system not configured. Please contact support." },
         { status: 500 }
       );
     }
 
     const body = await request.json();
-    const { amount, plan, isYearly, userId, email } = body;
-
-    console.log("Request body:", { amount, plan, isYearly, userId, email });
+    const { amount, plan, isYearly, userId, email, userName } = body;
 
     if (!amount || amount <= 0) {
-      return NextResponse.json(
-        { error: "Invalid amount" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    // Amount should already be in paise from client
+    // Amount in paise
     const amountInPaise = Math.round(amount);
-    const receipt = `rcpt_${Date.now()}`.substring(0, 40);
 
-    // Create order using direct API call (simpler than SDK)
+    // Get the base URL for callback
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.angideck.com";
+
+    // Create payment link via Razorpay API
     const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-    
-    const orderPayload = {
+
+    const paymentLinkPayload = {
       amount: amountInPaise,
       currency: "INR",
-      receipt: receipt,
+      accept_partial: false,
+      description: `Angi Deck - ${plan} Plan (${isYearly ? "Yearly" : "Monthly"})`,
+      customer: {
+        name: userName || "Customer",
+        email: email || "",
+      },
+      notify: {
+        sms: false,
+        email: true,
+      },
+      reminder_enable: false,
       notes: {
         plan: plan || "unknown",
         billing: isYearly ? "yearly" : "monthly",
         userId: userId || "guest",
-        email: email || "unknown",
       },
+      callback_url: `${appUrl}/api/razorpay/callback?userId=${userId}&plan=${plan}&currency=INR`,
+      callback_method: "get",
     };
 
-    console.log("Creating order with payload:", orderPayload);
+    console.log("Creating payment link:", JSON.stringify(paymentLinkPayload, null, 2));
 
-    const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
+    const response = await fetch("https://api.razorpay.com/v1/payment_links", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Basic ${auth}`,
+        Authorization: `Basic ${auth}`,
       },
-      body: JSON.stringify(orderPayload),
+      body: JSON.stringify(paymentLinkPayload),
     });
 
-    const responseText = await razorpayResponse.text();
-    console.log("Razorpay response status:", razorpayResponse.status);
+    const responseText = await response.text();
+    console.log("Razorpay response status:", response.status);
     console.log("Razorpay response:", responseText);
 
-    if (!razorpayResponse.ok) {
+    if (!response.ok) {
       let errorData;
       try {
         errorData = JSON.parse(responseText);
@@ -75,16 +82,16 @@ export async function POST(request: NextRequest) {
       }
       console.error("Razorpay API error:", errorData);
       return NextResponse.json(
-        { 
-          error: errorData?.error?.description || "Failed to create payment order",
-          details: errorData 
+        {
+          error: errorData?.error?.description || "Failed to create payment link",
+          details: errorData,
         },
-        { status: razorpayResponse.status }
+        { status: response.status }
       );
     }
 
-    const order = JSON.parse(responseText);
-    console.log("Order created successfully:", order.id);
+    const paymentLink = JSON.parse(responseText);
+    console.log("Payment link created:", paymentLink.short_url);
 
     // Store payment record
     if (userId && email) {
@@ -94,16 +101,19 @@ export async function POST(request: NextRequest) {
         amountInPaise,
         "INR",
         plan,
-        order.id
+        paymentLink.id
       );
     }
 
-    return NextResponse.json(order);
+    return NextResponse.json({
+      paymentUrl: paymentLink.short_url,
+      paymentLinkId: paymentLink.id,
+    });
   } catch (error: unknown) {
-    console.error("Create order error:", error);
+    console.error("Create payment link error:", error);
     const err = error as { message?: string };
     return NextResponse.json(
-      { error: err?.message || "Failed to create order" },
+      { error: err?.message || "Failed to create payment link" },
       { status: 500 }
     );
   }

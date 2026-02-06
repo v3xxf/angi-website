@@ -5,18 +5,15 @@ import { motion } from "framer-motion";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { pricingTiers, currencySymbols } from "@/lib/constants";
-import { agents } from "@/lib/agents-data";
-import { getUser, updateUserPlan, User } from "@/lib/auth";
+import { getUser, User } from "@/lib/auth";
 import Button from "@/components/ui/Button";
-import "@/lib/razorpay-types";
-import type { RazorpayResponse } from "@/lib/razorpay-types";
 
 type Currency = "USD" | "INR";
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -24,16 +21,12 @@ function CheckoutContent() {
 
   const planId = searchParams.get("plan") || "pro";
   const billing = searchParams.get("billing") || "monthly";
-  const currencyParam = searchParams.get("currency") || "INR";
-  const currency = (currencyParam === "USD" ? "USD" : "INR") as Currency;
   const isYearly = billing === "yearly";
 
   const plan = pricingTiers.find((t) => t.id === planId) || pricingTiers[1];
-  const price = plan.price[currency];
+  const price = plan.price["INR"];
   const amount = isYearly ? price.yearly : price.monthly;
-
-  // Amount in smallest currency unit (paise for INR, cents for USD)
-  const amountInSmallestUnit = currency === "INR" ? amount * 100 : amount * 100;
+  const amountInPaise = amount * 100;
 
   useEffect(() => {
     const currentUser = getUser();
@@ -43,24 +36,10 @@ function CheckoutContent() {
     }
     setUser(currentUser);
     setLoading(false);
-
-    // Load Razorpay script
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
   }, [router]);
 
-  const formatPrice = (price: number, curr: Currency) => {
-    const symbol = currencySymbols[curr];
-    if (curr === "INR") {
-      return `${symbol}${price.toLocaleString("en-IN")}`;
-    }
-    return `${symbol}${price}`;
+  const formatPrice = (price: number) => {
+    return `₹${price.toLocaleString("en-IN")}`;
   };
 
   const handlePayment = async () => {
@@ -70,86 +49,32 @@ function CheckoutContent() {
     setError("");
 
     try {
-      // Create order on server - Force INR for now
-      const orderResponse = await fetch("/api/razorpay/create-order", {
+      // Create payment link on server
+      const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: amountInSmallestUnit,
-          currency: "INR", // Force INR
+          amount: amountInPaise,
           plan: plan.id,
           isYearly,
           userId: user.id,
           email: user.email,
+          userName: user.name,
         }),
       });
 
-      const orderData = await orderResponse.json();
+      const data = await response.json();
 
-      if (!orderResponse.ok) {
-        throw new Error(orderData.error || "Failed to create order");
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create payment");
       }
 
-      // Open Razorpay checkout
-      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_Rknvjra18CvozT";
-      console.log("Using Razorpay key:", razorpayKey);
-      
-      const options = {
-        key: razorpayKey,
-        amount: amountInSmallestUnit,
-        currency: "INR", // Force INR for now
-        name: "Angi Deck",
-        description: `${plan.name} Plan - ${isYearly ? "Yearly" : "Monthly"}`,
-        order_id: orderData.id,
-        prefill: {
-          name: user.name,
-          email: user.email,
-        },
-        theme: {
-          color: "#00d4ff",
-        },
-        handler: async function (response: RazorpayResponse) {
-          // Verify payment on server
-          try {
-            const verifyResponse = await fetch("/api/razorpay/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature,
-                plan: plan.id,
-                userId: user.id,
-                currency,
-                amount,
-              }),
-            });
-
-            const verifyData = await verifyResponse.json();
-
-            if (verifyResponse.ok && verifyData.success) {
-              // Update local user plan
-              await updateUserPlan(plan.id as "free" | "starter" | "pro" | "enterprise", currency);
-              
-              // Redirect to success
-              router.push("/dashboard?payment=success");
-            } else {
-              setError("Payment verification failed. Please contact support.");
-            }
-          } catch {
-            setError("Payment verification failed. Please contact support.");
-          }
-          setProcessing(false);
-        },
-        modal: {
-          ondismiss: function () {
-            setProcessing(false);
-          },
-        },
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
+      // Redirect to Razorpay payment page
+      if (data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+      } else {
+        throw new Error("No payment URL received");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setProcessing(false);
@@ -169,11 +94,9 @@ function CheckoutContent() {
 
   return (
     <main className="min-h-screen bg-background relative overflow-hidden">
-      {/* Background */}
       <div className="fixed inset-0 circuit-bg opacity-20" />
       <div className="fixed inset-0 bg-gradient-to-b from-hud-blue/5 via-background to-hud-purple/5" />
 
-      {/* Back button */}
       <div className="absolute top-6 left-6 z-20">
         <Link
           href="/dashboard"
@@ -191,20 +114,16 @@ function CheckoutContent() {
           className="w-full max-w-lg"
         >
           <div className="hud-panel p-8">
-            {/* Header */}
             <div className="text-center mb-8">
               <span className="font-hud text-sm text-hud-cyan tracking-wider mb-4 block">
                 CHECKOUT
               </span>
-              <h1 className="text-2xl font-bold mb-2">
-                Complete Your Purchase
-              </h1>
+              <h1 className="text-2xl font-bold mb-2">Complete Your Purchase</h1>
               <p className="text-foreground-secondary text-sm">
                 You&apos;re about to unlock the {plan.name} plan
               </p>
             </div>
 
-            {/* Plan summary */}
             <div className="bg-background/50 rounded-xl p-6 mb-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -215,7 +134,7 @@ function CheckoutContent() {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold gradient-text">
-                    {formatPrice(amount, currency)}
+                    {formatPrice(amount)}
                   </div>
                   <div className="text-xs text-foreground-secondary">
                     /{isYearly ? "year" : "month"}
@@ -223,32 +142,6 @@ function CheckoutContent() {
                 </div>
               </div>
 
-              {/* Agents included */}
-              <div className="border-t border-hud-blue/20 pt-4">
-                <p className="text-sm text-foreground-secondary mb-2">
-                  {plan.agentCount} agents included:
-                </p>
-                <div className="flex -space-x-2">
-                  {agents.slice(0, Math.min(plan.agentCount, 6)).map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm border-2 border-background"
-                      style={{
-                        background: `linear-gradient(135deg, ${agent.color}60, ${agent.color}30)`,
-                      }}
-                    >
-                      {agent.avatar}
-                    </div>
-                  ))}
-                  {plan.agentCount > 6 && (
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs bg-hud-purple/30 border-2 border-background">
-                      +{plan.agentCount - 6}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Features */}
               <div className="border-t border-hud-blue/20 pt-4 mt-4">
                 <ul className="space-y-2">
                   {plan.features.slice(0, 4).map((feature) => (
@@ -262,14 +155,12 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* Error message */}
             {error && (
               <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
                 {error}
               </div>
             )}
 
-            {/* Pay button */}
             <Button
               onClick={handlePayment}
               disabled={processing}
@@ -278,14 +169,13 @@ function CheckoutContent() {
               {processing ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Processing...
+                  Redirecting to payment...
                 </span>
               ) : (
-                `Pay ${formatPrice(amount, currency)}`
+                `Pay ${formatPrice(amount)}`
               )}
             </Button>
 
-            {/* Payment methods */}
             <div className="mt-6 text-center">
               <p className="text-xs text-foreground-secondary mb-3">
                 Secure payment powered by Razorpay
@@ -298,11 +188,10 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* Security note */}
             <div className="mt-6 pt-6 border-t border-hud-blue/20 text-center">
               <p className="text-xs text-foreground-secondary flex items-center justify-center gap-2">
                 <span className="text-green-400">🔒</span>
-                Your payment information is encrypted and secure
+                You&apos;ll be redirected to Razorpay&apos;s secure payment page
               </p>
             </div>
           </div>
