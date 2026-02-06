@@ -1,18 +1,21 @@
-// Server-side JSON file storage for users and payments
-// For production on Vercel, this uses the /tmp directory which is ephemeral
-// Consider upgrading to Vercel KV or a database for persistent storage
+// Server-side storage using Upstash Redis for persistence
+// Falls back to in-memory storage if Redis is not configured
 
-import { promises as fs } from "fs";
-import path from "path";
+import { Redis } from "@upstash/redis";
 import crypto from "crypto";
 
-// Use /tmp for Vercel compatibility, local data folder for development
-const DATA_DIR = process.env.NODE_ENV === "production" 
-  ? "/tmp/angi-data" 
-  : path.join(process.cwd(), "data");
-
-const USERS_FILE = path.join(DATA_DIR, "users.json");
-const PAYMENTS_FILE = path.join(DATA_DIR, "payments.json");
+// Initialize Redis client if credentials are available
+let redis: Redis | null = null;
+try {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+} catch (error) {
+  console.error("Failed to initialize Redis:", error);
+}
 
 // Admin emails - these users are automatically granted admin role
 const ADMIN_EMAILS = [
@@ -50,14 +53,13 @@ export interface Payment {
   completedAt?: string;
 }
 
-// Ensure data directory exists
-async function ensureDataDir(): Promise<void> {
-  try {
-    await fs.access(DATA_DIR);
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-  }
-}
+// Redis keys
+const USERS_KEY = "angi:users";
+const PAYMENTS_KEY = "angi:payments";
+
+// In-memory fallback (for development without Redis)
+let inMemoryUsers: StoredUser[] = [];
+let inMemoryPayments: Payment[] = [];
 
 // Hash password
 export function hashPassword(password: string): string {
@@ -73,19 +75,30 @@ export function generateId(): string {
 
 // Get all users
 export async function getUsers(): Promise<StoredUser[]> {
-  await ensureDataDir();
-  try {
-    const data = await fs.readFile(USERS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
+  if (redis) {
+    try {
+      const data = await redis.get<StoredUser[]>(USERS_KEY);
+      return data || [];
+    } catch (error) {
+      console.error("Redis getUsers error:", error);
+      return inMemoryUsers;
+    }
   }
+  return inMemoryUsers;
 }
 
 // Save all users
 async function saveUsers(users: StoredUser[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
+  if (redis) {
+    try {
+      await redis.set(USERS_KEY, users);
+    } catch (error) {
+      console.error("Redis saveUsers error:", error);
+      inMemoryUsers = users;
+    }
+  } else {
+    inMemoryUsers = users;
+  }
 }
 
 // Get user by email
@@ -154,6 +167,8 @@ export async function createUser(
   users.push(newUser);
   await saveUsers(users);
 
+  console.log("User created:", newUser.email, "Total users:", users.length, "Using Redis:", !!redis);
+
   return { user: newUser, error: null };
 }
 
@@ -162,9 +177,13 @@ export async function verifyUser(
   email: string,
   password: string
 ): Promise<{ user: StoredUser | null; error: string | null }> {
-  const user = await getUserByEmail(email);
+  const users = await getUsers();
+  console.log("Verifying user:", email, "Total users in DB:", users.length, "Using Redis:", !!redis);
+  
+  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
 
   if (!user) {
+    console.log("User not found:", email);
     return { user: null, error: "No account found with this email" };
   }
 
@@ -177,7 +196,6 @@ export async function verifyUser(
     (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
   );
   if (isAdminEmail && user.role !== "admin") {
-    const users = await getUsers();
     const userIndex = users.findIndex((u) => u.id === user.id);
     if (userIndex !== -1) {
       users[userIndex].role = "admin";
@@ -254,19 +272,30 @@ export async function makeUserAdmin(userId: string): Promise<{ success: boolean;
 
 // Get all payments
 export async function getPayments(): Promise<Payment[]> {
-  await ensureDataDir();
-  try {
-    const data = await fs.readFile(PAYMENTS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
+  if (redis) {
+    try {
+      const data = await redis.get<Payment[]>(PAYMENTS_KEY);
+      return data || [];
+    } catch (error) {
+      console.error("Redis getPayments error:", error);
+      return inMemoryPayments;
+    }
   }
+  return inMemoryPayments;
 }
 
 // Save all payments
 async function savePayments(payments: Payment[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
+  if (redis) {
+    try {
+      await redis.set(PAYMENTS_KEY, payments);
+    } catch (error) {
+      console.error("Redis savePayments error:", error);
+      inMemoryPayments = payments;
+    }
+  } else {
+    inMemoryPayments = payments;
+  }
 }
 
 // Create payment record
