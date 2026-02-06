@@ -1,80 +1,89 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers, getPayments, getUserById, makeUserAdmin, isUserAdmin } from "@/lib/storage";
+import {
+  getUsers,
+  getPayments,
+  getUserById,
+  makeUserAdmin,
+  removeAdmin,
+  isUserAdmin,
+  disableUser,
+  enableUser,
+  adminSetPlan,
+  deleteUser,
+  adminResetPassword,
+} from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
-// Hardcoded admin emails for reliable access
 const ADMIN_EMAILS = [
   "varunagarwl3169@gmail.com",
   "v1@gmail.com",
 ];
 
-// Check if email is admin
 function isAdminEmail(email: string): boolean {
   return ADMIN_EMAILS.some(
-    (adminEmail) => adminEmail.toLowerCase() === email.toLowerCase()
+    (e) => e.toLowerCase() === email.toLowerCase()
   );
 }
 
-// GET /api/admin - Get all users and payments (admin only)
+async function checkAdmin(request: NextRequest): Promise<{ authorized: boolean; userId?: string; email?: string }> {
+  const userId = request.headers.get("x-user-id");
+  const userEmail = request.headers.get("x-user-email");
+
+  if (!userId && !userEmail) return { authorized: false };
+
+  if (userEmail && isAdminEmail(userEmail)) {
+    return { authorized: true, userId: userId || undefined, email: userEmail };
+  }
+
+  if (userId && (await isUserAdmin(userId))) {
+    return { authorized: true, userId, email: userEmail || undefined };
+  }
+
+  return { authorized: false };
+}
+
+// GET /api/admin - Dashboard data
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID or email from header (set by client)
-    const userId = request.headers.get("x-user-id");
-    const userEmail = request.headers.get("x-user-email");
-    
-    if (!userId && !userEmail) {
-      return NextResponse.json({ error: "Unauthorized - no user ID or email" }, { status: 401 });
+    const auth = await checkAdmin(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Check if user is admin - either by stored role or by email
-    let hasAdminAccess = false;
-    
-    if (userEmail && isAdminEmail(userEmail)) {
-      hasAdminAccess = true;
-    } else if (userId) {
-      hasAdminAccess = await isUserAdmin(userId);
-    }
-    
-    if (!hasAdminAccess) {
-      return NextResponse.json({ error: "Forbidden - admin access required" }, { status: 403 });
-    }
-
-    // Get all data
     const users = await getUsers();
     const payments = await getPayments();
 
-    // Return users without password hashes
-    const safeUsers = users.map(({ passwordHash: _, ...user }) => user);
+    const safeUsers = users.map(({ passwordHash: _pw, ...user }) => user);
 
-    // Calculate statistics
     const stats = {
       totalUsers: safeUsers.length,
-      paidUsers: safeUsers.filter(u => u.plan !== "free").length,
-      freeUsers: safeUsers.filter(u => u.plan === "free").length,
+      paidUsers: safeUsers.filter((u) => u.plan !== "free").length,
+      freeUsers: safeUsers.filter((u) => u.plan === "free").length,
+      disabledUsers: safeUsers.filter((u) => u.disabled).length,
+      adminUsers: safeUsers.filter((u) => u.role === "admin").length,
       totalPayments: payments.length,
-      completedPayments: payments.filter(p => p.status === "completed").length,
-      pendingPayments: payments.filter(p => p.status === "pending").length,
+      completedPayments: payments.filter((p) => p.status === "completed").length,
+      pendingPayments: payments.filter((p) => p.status === "pending").length,
       totalRevenue: {
-        USD: payments.filter(p => p.status === "completed" && p.currency === "USD")
+        USD: payments
+          .filter((p) => p.status === "completed" && p.currency === "USD")
           .reduce((sum, p) => sum + p.amount, 0),
-        INR: payments.filter(p => p.status === "completed" && p.currency === "INR")
+        INR: payments
+          .filter((p) => p.status === "completed" && p.currency === "INR")
           .reduce((sum, p) => sum + p.amount, 0),
       },
       planBreakdown: {
-        starter: safeUsers.filter(u => u.plan === "starter").length,
-        pro: safeUsers.filter(u => u.plan === "pro").length,
-        enterprise: safeUsers.filter(u => u.plan === "enterprise").length,
+        free: safeUsers.filter((u) => u.plan === "free").length,
+        starter: safeUsers.filter((u) => u.plan === "starter").length,
+        pro: safeUsers.filter((u) => u.plan === "pro").length,
+        enterprise: safeUsers.filter((u) => u.plan === "enterprise").length,
       },
     };
 
-    return NextResponse.json({ 
-      users: safeUsers, 
-      payments, 
-      stats,
-    });
+    return NextResponse.json({ users: safeUsers, payments, stats });
   } catch (error) {
-    console.error("Admin API error:", error);
+    console.error("Admin GET error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -82,62 +91,85 @@ export async function GET(request: NextRequest) {
 // POST /api/admin - Admin actions
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id");
-    
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized - no user ID" }, { status: 401 });
+    const auth = await checkAdmin(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const { action, targetUserId } = await request.json();
+    const body = await request.json();
+    const { action, targetUserId, plan, reason, newPassword } = body;
 
-    // For making the first admin, allow if no admins exist
-    if (action === "makeFirstAdmin") {
-      const users = await getUsers();
-      const existingAdmin = users.find(u => u.role === "admin");
-      
-      if (existingAdmin) {
-        return NextResponse.json({ error: "Admin already exists" }, { status: 400 });
+    if (!action) {
+      return NextResponse.json({ error: "Missing action" }, { status: 400 });
+    }
+
+    switch (action) {
+      case "makeAdmin": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const result = await makeUserAdmin(targetUserId);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "User promoted to admin" });
       }
 
-      const result = await makeUserAdmin(targetUserId);
-      if (result.error) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
+      case "removeAdmin": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const result = await removeAdmin(targetUserId);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "Admin role removed" });
       }
 
-      return NextResponse.json({ success: true, message: "User is now admin" });
-    }
-
-    // For other actions, require admin
-    const isAdmin = await isUserAdmin(userId);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Forbidden - admin access required" }, { status: 403 });
-    }
-
-    if (action === "makeAdmin") {
-      const result = await makeUserAdmin(targetUserId);
-      if (result.error) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
+      case "disableUser": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const result = await disableUser(targetUserId, reason);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "User disabled" });
       }
-      return NextResponse.json({ success: true, message: "User promoted to admin" });
-    }
 
-    if (action === "getUserDetails") {
-      const user = await getUserById(targetUserId);
-      if (!user) {
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      case "enableUser": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const result = await enableUser(targetUserId);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "User enabled" });
       }
-      const { passwordHash: _, ...safeUser } = user;
-      
-      // Get user's payments
-      const payments = await getPayments();
-      const userPayments = payments.filter(p => p.userId === targetUserId);
-      
-      return NextResponse.json({ user: safeUser, payments: userPayments });
-    }
 
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      case "changePlan": {
+        if (!targetUserId || !plan) return NextResponse.json({ error: "Missing targetUserId or plan" }, { status: 400 });
+        const validPlans = ["free", "starter", "pro", "enterprise"];
+        if (!validPlans.includes(plan)) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+        const result = await adminSetPlan(targetUserId, plan);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: `Plan changed to ${plan}` });
+      }
+
+      case "deleteUser": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const result = await deleteUser(targetUserId);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "User deleted" });
+      }
+
+      case "resetPassword": {
+        if (!targetUserId || !newPassword) return NextResponse.json({ error: "Missing targetUserId or newPassword" }, { status: 400 });
+        const result = await adminResetPassword(targetUserId, newPassword);
+        if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json({ success: true, message: "Password reset" });
+      }
+
+      case "getUserDetails": {
+        if (!targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+        const user = await getUserById(targetUserId);
+        if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+        const { passwordHash: _pw, ...safeUser } = user;
+        const payments = await getPayments();
+        const userPayments = payments.filter((p) => p.userId === targetUserId);
+        return NextResponse.json({ user: safeUser, payments: userPayments });
+      }
+
+      default:
+        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
   } catch (error) {
-    console.error("Admin action error:", error);
+    console.error("Admin POST error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

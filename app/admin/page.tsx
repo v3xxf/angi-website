@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { getUser } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +16,8 @@ interface UserData {
   currency?: "USD" | "INR";
   signupIp?: string;
   lastLoginIp?: string;
+  disabled?: boolean;
+  disabledReason?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -39,19 +41,16 @@ interface Stats {
   totalUsers: number;
   paidUsers: number;
   freeUsers: number;
+  disabledUsers: number;
+  adminUsers: number;
   totalPayments: number;
   completedPayments: number;
   pendingPayments: number;
-  totalRevenue: {
-    USD: number;
-    INR: number;
-  };
-  planBreakdown: {
-    starter: number;
-    pro: number;
-    enterprise: number;
-  };
+  totalRevenue: { USD: number; INR: number };
+  planBreakdown: { free: number; starter: number; pro: number; enterprise: number };
 }
+
+type Tab = "overview" | "users" | "payments";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -60,27 +59,25 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<UserData[]>([]);
   const [payments, setPayments] = useState<PaymentData[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "payments">("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [actionLoading, setActionLoading] = useState("");
+  const [toast, setToast] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{
+    action: string;
+    userId: string;
+    userName: string;
+    extra?: string;
+  } | null>(null);
+  const [resetPwModal, setResetPwModal] = useState<{ userId: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [authInfo, setAuthInfo] = useState<{ userId: string; email: string } | null>(null);
 
-  useEffect(() => {
-    const user = getUser();
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-
-    // Always try to fetch admin data - the API will check if user has admin access
-    fetchAdminData(user.id, user.email);
-  }, [router]);
-
-  const fetchAdminData = async (userId: string, email: string) => {
+  const fetchAdminData = useCallback(async (userId: string, email: string) => {
     try {
       const response = await fetch("/api/admin", {
-        headers: {
-          "x-user-id": userId,
-          "x-user-email": email,
-        },
+        headers: { "x-user-id": userId, "x-user-email": email },
       });
 
       if (!response.ok) {
@@ -99,17 +96,72 @@ export default function AdminDashboard() {
       setError("Failed to load admin data");
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const user = getUser();
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    setAuthInfo({ userId: user.id, email: user.email });
+    fetchAdminData(user.id, user.email);
+  }, [router, fetchAdminData]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  const doAction = async (action: string, targetUserId: string, extra?: Record<string, string>) => {
+    if (!authInfo) return;
+    setActionLoading(targetUserId + action);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": authInfo.userId,
+          "x-user-email": authInfo.email,
+        },
+        body: JSON.stringify({ action, targetUserId, ...extra }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || "Done!");
+        await fetchAdminData(authInfo.userId, authInfo.email);
+        // Update selectedUser if it was the one acted upon
+        if (selectedUser?.id === targetUserId) {
+          const updated = users.find((u) => u.id === targetUserId);
+          if (updated) setSelectedUser(updated);
+          else setSelectedUser(null);
+        }
+      } else {
+        showToast("Error: " + (data.error || "Failed"));
+      }
+    } catch {
+      showToast("Error: Network failure");
+    }
+    setActionLoading("");
+    setConfirmAction(null);
   };
 
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: currency,
-    }).format(amount / 100);
+  const formatDate = (d: string) => new Date(d).toLocaleString();
+  const formatCurrency = (amount: number, currency: string) =>
+    new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(amount / 100);
+
+  const filteredUsers = users.filter(
+    (u) =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.phone.includes(searchQuery)
+  );
+
+  const planColors: Record<string, string> = {
+    free: "bg-gray-500/20 text-gray-400",
+    starter: "bg-blue-500/20 text-blue-400",
+    pro: "bg-purple-500/20 text-purple-400",
+    enterprise: "bg-pink-500/20 text-pink-400",
   };
 
   if (loading) {
@@ -130,9 +182,7 @@ export default function AdminDashboard() {
           <div className="text-6xl mb-4">🔒</div>
           <h1 className="text-2xl font-bold text-red-400 mb-2">Access Denied</h1>
           <p className="text-foreground-secondary mb-4">{error}</p>
-          <Link href="/dashboard" className="text-hud-cyan hover:underline">
-            Return to Dashboard
-          </Link>
+          <Link href="/dashboard" className="text-hud-cyan hover:underline">Return to Dashboard</Link>
         </div>
       </div>
     );
@@ -140,6 +190,20 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -40 }}
+            className="fixed top-4 right-4 z-[100] bg-hud-cyan/20 border border-hud-cyan/50 text-hud-cyan px-6 py-3 rounded-lg backdrop-blur-sm"
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="border-b border-hud-blue/30 bg-background-secondary/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -155,8 +219,9 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-4">
+            <span className="text-xs text-foreground-secondary hidden md:block">{authInfo?.email}</span>
             <Link href="/dashboard" className="text-sm text-foreground-secondary hover:text-white transition">
-              Back to Dashboard
+              Dashboard
             </Link>
           </div>
         </div>
@@ -164,7 +229,7 @@ export default function AdminDashboard() {
 
       <main className="container mx-auto px-4 py-8">
         {/* Tabs */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex gap-2 mb-8 flex-wrap">
           {(["overview", "users", "payments"] as const).map((tab) => (
             <button
               key={tab}
@@ -175,224 +240,270 @@ export default function AdminDashboard() {
                   : "bg-background-secondary text-foreground-secondary hover:text-white border border-transparent"
               }`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === "overview" ? "Overview" : tab === "users" ? `Users (${users.length})` : `Payments (${payments.length})`}
             </button>
           ))}
         </div>
 
-        {/* Overview Tab */}
+        {/* ==================== OVERVIEW ==================== */}
         {activeTab === "overview" && stats && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-8"
-          >
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="hud-panel p-6">
-                <div className="text-4xl font-bold text-hud-cyan">{stats.totalUsers}</div>
-                <div className="text-foreground-secondary text-sm">Total Users</div>
-              </div>
-              <div className="hud-panel p-6">
-                <div className="text-4xl font-bold text-green-400">{stats.paidUsers}</div>
-                <div className="text-foreground-secondary text-sm">Paid Users</div>
-              </div>
-              <div className="hud-panel p-6">
-                <div className="text-4xl font-bold text-yellow-400">{stats.freeUsers}</div>
-                <div className="text-foreground-secondary text-sm">Free Users</div>
-              </div>
-              <div className="hud-panel p-6">
-                <div className="text-4xl font-bold text-purple-400">{stats.completedPayments}</div>
-                <div className="text-foreground-secondary text-sm">Completed Payments</div>
-              </div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {[
+                { label: "Total Users", value: stats.totalUsers, color: "text-hud-cyan" },
+                { label: "Paid Users", value: stats.paidUsers, color: "text-green-400" },
+                { label: "Free Users", value: stats.freeUsers, color: "text-yellow-400" },
+                { label: "Disabled", value: stats.disabledUsers, color: "text-red-400" },
+                { label: "Admins", value: stats.adminUsers, color: "text-purple-400" },
+                { label: "Payments", value: stats.completedPayments, color: "text-blue-400" },
+              ].map((s) => (
+                <div key={s.label} className="hud-panel p-4">
+                  <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>
+                  <div className="text-foreground-secondary text-xs mt-1">{s.label}</div>
+                </div>
+              ))}
             </div>
 
             {/* Revenue */}
-            <div className="hud-panel p-6">
-              <h2 className="text-xl font-bold mb-4">Total Revenue</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-background/50 rounded-lg p-4">
-                  <div className="text-3xl font-bold text-green-400">
-                    {formatCurrency(stats.totalRevenue.USD, "USD")}
-                  </div>
-                  <div className="text-foreground-secondary text-sm">USD Revenue</div>
-                </div>
-                <div className="bg-background/50 rounded-lg p-4">
-                  <div className="text-3xl font-bold text-yellow-400">
-                    {formatCurrency(stats.totalRevenue.INR, "INR")}
-                  </div>
-                  <div className="text-foreground-secondary text-sm">INR Revenue</div>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="hud-panel p-6">
+                <h3 className="text-sm text-foreground-secondary mb-2">INR Revenue</h3>
+                <div className="text-3xl font-bold text-green-400">{formatCurrency(stats.totalRevenue.INR, "INR")}</div>
+              </div>
+              <div className="hud-panel p-6">
+                <h3 className="text-sm text-foreground-secondary mb-2">USD Revenue</h3>
+                <div className="text-3xl font-bold text-blue-400">{formatCurrency(stats.totalRevenue.USD, "USD")}</div>
               </div>
             </div>
 
             {/* Plan Breakdown */}
             <div className="hud-panel p-6">
-              <h2 className="text-xl font-bold mb-4">Plan Distribution</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-background/50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-400">{stats.planBreakdown.starter}</div>
-                  <div className="text-foreground-secondary text-sm">Starter</div>
-                </div>
-                <div className="bg-background/50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-purple-400">{stats.planBreakdown.pro}</div>
-                  <div className="text-foreground-secondary text-sm">Pro</div>
-                </div>
-                <div className="bg-background/50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-pink-400">{stats.planBreakdown.enterprise}</div>
-                  <div className="text-foreground-secondary text-sm">Enterprise</div>
-                </div>
+              <h3 className="text-lg font-bold mb-4">Plan Distribution</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {(["free", "starter", "pro", "enterprise"] as const).map((p) => (
+                  <div key={p} className="bg-background/50 rounded-lg p-4 text-center">
+                    <div className="text-2xl font-bold">{stats.planBreakdown[p]}</div>
+                    <div className="text-foreground-secondary text-sm capitalize">{p}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Users */}
+            <div className="hud-panel p-6">
+              <h3 className="text-lg font-bold mb-4">Recent Signups</h3>
+              <div className="space-y-3">
+                {users.slice(-5).reverse().map((u) => (
+                  <div key={u.id} className="flex items-center justify-between bg-background/50 rounded-lg p-3">
+                    <div>
+                      <span className="font-medium">{u.name}</span>
+                      <span className="text-foreground-secondary text-sm ml-2">{u.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-xs ${planColors[u.plan]}`}>{u.plan.toUpperCase()}</span>
+                      <span className="text-foreground-secondary text-xs">{new Date(u.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </motion.div>
         )}
 
-        {/* Users Tab */}
+        {/* ==================== USERS ==================== */}
         {activeTab === "users" && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <div className="hud-panel overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-background-secondary">
-                    <tr>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">User</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Phone</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Plan</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Role</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Signup IP</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Last Login IP</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Created</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="border-t border-hud-blue/20 hover:bg-hud-blue/5 transition"
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            {/* Search */}
+            <div className="flex gap-4 items-center">
+              <input
+                type="text"
+                placeholder="Search by name, email, or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 bg-background-secondary border border-hud-blue/30 rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:border-hud-cyan/50"
+              />
+              <span className="text-foreground-secondary text-sm">{filteredUsers.length} users</span>
+            </div>
+
+            {/* User Cards */}
+            <div className="space-y-3">
+              {filteredUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className={`hud-panel p-4 transition-all ${user.disabled ? "opacity-60 border-red-500/30" : ""}`}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center gap-4">
+                    {/* User Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-lg">{user.name}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${planColors[user.plan]}`}>{user.plan.toUpperCase()}</span>
+                        {user.role === "admin" && (
+                          <span className="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-400">ADMIN</span>
+                        )}
+                        {user.disabled && (
+                          <span className="px-2 py-0.5 rounded text-xs bg-red-600/30 text-red-300">DISABLED</span>
+                        )}
+                      </div>
+                      <div className="text-foreground-secondary text-sm mt-1">{user.email}</div>
+                      <div className="flex gap-4 text-xs text-foreground-secondary mt-1">
+                        <span>Phone: {user.phone || "N/A"}</span>
+                        <span>IP: {user.signupIp || "N/A"}</span>
+                        <span>Joined: {new Date(user.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      <button
+                        onClick={() => setSelectedUser(user)}
+                        className="px-3 py-1.5 text-xs rounded-lg bg-hud-cyan/10 text-hud-cyan border border-hud-cyan/30 hover:bg-hud-cyan/20 transition"
                       >
-                        <td className="p-4">
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-sm text-foreground-secondary">{user.email}</div>
-                        </td>
-                        <td className="p-4 text-foreground-secondary">{user.phone || "N/A"}</td>
-                        <td className="p-4">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              user.plan === "free"
-                                ? "bg-gray-500/20 text-gray-400"
-                                : user.plan === "starter"
-                                ? "bg-blue-500/20 text-blue-400"
-                                : user.plan === "pro"
-                                ? "bg-purple-500/20 text-purple-400"
-                                : "bg-pink-500/20 text-pink-400"
-                            }`}
-                          >
-                            {user.plan.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              user.role === "admin"
-                                ? "bg-red-500/20 text-red-400"
-                                : "bg-gray-500/20 text-gray-400"
-                            }`}
-                          >
-                            {user.role.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="p-4 text-foreground-secondary text-sm font-mono">
-                          {user.signupIp || "N/A"}
-                        </td>
-                        <td className="p-4 text-foreground-secondary text-sm font-mono">
-                          {user.lastLoginIp || "N/A"}
-                        </td>
-                        <td className="p-4 text-foreground-secondary text-sm">
-                          {formatDate(user.createdAt)}
-                        </td>
-                        <td className="p-4">
-                          <button
-                            onClick={() => setSelectedUser(user)}
-                            className="text-hud-cyan hover:text-white text-sm transition"
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        Details
+                      </button>
+
+                      {/* Plan dropdown */}
+                      <select
+                        value={user.plan}
+                        onChange={(e) =>
+                          setConfirmAction({
+                            action: "changePlan",
+                            userId: user.id,
+                            userName: user.name,
+                            extra: e.target.value,
+                          })
+                        }
+                        className="px-3 py-1.5 text-xs rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 transition cursor-pointer appearance-none"
+                      >
+                        <option value="free">Free</option>
+                        <option value="starter">Starter</option>
+                        <option value="pro">Pro</option>
+                        <option value="enterprise">Enterprise</option>
+                      </select>
+
+                      {/* Toggle admin */}
+                      {user.role === "admin" ? (
+                        <button
+                          onClick={() =>
+                            setConfirmAction({ action: "removeAdmin", userId: user.id, userName: user.name })
+                          }
+                          disabled={actionLoading === user.id + "removeAdmin"}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/30 hover:bg-orange-500/20 transition"
+                        >
+                          Remove Admin
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setConfirmAction({ action: "makeAdmin", userId: user.id, userName: user.name })
+                          }
+                          disabled={actionLoading === user.id + "makeAdmin"}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20 transition"
+                        >
+                          Make Admin
+                        </button>
+                      )}
+
+                      {/* Toggle disable */}
+                      {user.disabled ? (
+                        <button
+                          onClick={() => doAction("enableUser", user.id)}
+                          disabled={actionLoading === user.id + "enableUser"}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 transition"
+                        >
+                          Enable
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setConfirmAction({ action: "disableUser", userId: user.id, userName: user.name })
+                          }
+                          className="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition"
+                        >
+                          Disable
+                        </button>
+                      )}
+
+                      {/* Reset password */}
+                      <button
+                        onClick={() => setResetPwModal({ userId: user.id, name: user.name })}
+                        className="px-3 py-1.5 text-xs rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20 transition"
+                      >
+                        Reset PW
+                      </button>
+
+                      {/* Delete */}
+                      <button
+                        onClick={() =>
+                          setConfirmAction({ action: "deleteUser", userId: user.id, userName: user.name })
+                        }
+                        className="px-3 py-1.5 text-xs rounded-lg bg-red-600/10 text-red-500 border border-red-600/30 hover:bg-red-600/20 transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {filteredUsers.length === 0 && (
+                <div className="text-center text-foreground-secondary py-12">No users found</div>
+              )}
             </div>
           </motion.div>
         )}
 
-        {/* Payments Tab */}
+        {/* ==================== PAYMENTS ==================== */}
         {activeTab === "payments" && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <div className="hud-panel overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-background-secondary">
                     <tr>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Order ID</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Email</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Plan</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Amount</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Status</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Created</th>
-                      <th className="text-left p-4 text-foreground-secondary font-medium">Completed</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Order ID</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Email</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Plan</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Amount</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Status</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Payment ID</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Created</th>
+                      <th className="text-left p-4 text-foreground-secondary font-medium text-sm">Completed</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {payments.map((payment) => (
-                      <tr
-                        key={payment.id}
-                        className="border-t border-hud-blue/20 hover:bg-hud-blue/5 transition"
-                      >
-                        <td className="p-4 font-mono text-sm">{payment.razorpayOrderId}</td>
-                        <td className="p-4 text-foreground-secondary">{payment.email}</td>
+                    {payments.map((p) => (
+                      <tr key={p.id} className="border-t border-hud-blue/20 hover:bg-hud-blue/5 transition">
+                        <td className="p-4 font-mono text-xs">{p.razorpayOrderId.substring(0, 20)}...</td>
+                        <td className="p-4 text-sm">{p.email}</td>
                         <td className="p-4">
-                          <span className="px-2 py-1 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
-                            {payment.plan.toUpperCase()}
+                          <span className={`px-2 py-0.5 rounded text-xs ${planColors[p.plan] || "bg-gray-500/20 text-gray-400"}`}>
+                            {p.plan.toUpperCase()}
                           </span>
                         </td>
-                        <td className="p-4 font-medium">
-                          {formatCurrency(payment.amount, payment.currency)}
-                        </td>
+                        <td className="p-4 font-medium text-sm">{formatCurrency(p.amount, p.currency)}</td>
                         <td className="p-4">
                           <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              payment.status === "completed"
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              p.status === "completed"
                                 ? "bg-green-500/20 text-green-400"
-                                : payment.status === "pending"
+                                : p.status === "pending"
                                 ? "bg-yellow-500/20 text-yellow-400"
                                 : "bg-red-500/20 text-red-400"
                             }`}
                           >
-                            {payment.status.toUpperCase()}
+                            {p.status.toUpperCase()}
                           </span>
                         </td>
-                        <td className="p-4 text-foreground-secondary text-sm">
-                          {formatDate(payment.createdAt)}
+                        <td className="p-4 font-mono text-xs text-foreground-secondary">
+                          {p.razorpayPaymentId ? p.razorpayPaymentId.substring(0, 20) + "..." : "-"}
                         </td>
-                        <td className="p-4 text-foreground-secondary text-sm">
-                          {payment.completedAt ? formatDate(payment.completedAt) : "-"}
-                        </td>
+                        <td className="p-4 text-foreground-secondary text-xs">{formatDate(p.createdAt)}</td>
+                        <td className="p-4 text-foreground-secondary text-xs">{p.completedAt ? formatDate(p.completedAt) : "-"}</td>
                       </tr>
                     ))}
                     {payments.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-foreground-secondary">
-                          No payments yet
-                        </td>
+                        <td colSpan={8} className="p-8 text-center text-foreground-secondary">No payments yet</td>
                       </tr>
                     )}
                   </tbody>
@@ -402,90 +513,205 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* User Details Modal */}
-        {selectedUser && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => setSelectedUser(null)}
-          >
+        {/* ==================== USER DETAILS MODAL ==================== */}
+        <AnimatePresence>
+          {selectedUser && (
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="hud-panel p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              onClick={() => setSelectedUser(null)}
             >
-              <div className="flex justify-between items-start mb-6">
-                <h2 className="text-2xl font-bold">User Details</h2>
-                <button
-                  onClick={() => setSelectedUser(null)}
-                  className="text-foreground-secondary hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="hud-panel p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold">{selectedUser.name}</h2>
+                    <p className="text-foreground-secondary text-sm">{selectedUser.email}</p>
+                  </div>
+                  <button onClick={() => setSelectedUser(null)} className="text-foreground-secondary hover:text-white text-xl">✕</button>
+                </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Name</label>
-                    <div className="font-medium">{selectedUser.name}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Email</label>
-                    <div className="font-medium">{selectedUser.email}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Phone</label>
-                    <div className="font-medium">{selectedUser.phone || "N/A"}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Role</label>
-                    <div className="font-medium capitalize">{selectedUser.role}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Plan</label>
-                    <div className="font-medium capitalize">{selectedUser.plan}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Currency</label>
-                    <div className="font-medium">{selectedUser.currency || "N/A"}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Signup IP</label>
-                    <div className="font-mono text-sm">{selectedUser.signupIp || "N/A"}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Last Login IP</label>
-                    <div className="font-mono text-sm">{selectedUser.lastLoginIp || "N/A"}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Created At</label>
-                    <div className="text-sm">{formatDate(selectedUser.createdAt)}</div>
-                  </div>
-                  <div>
-                    <label className="text-foreground-secondary text-sm">Last Updated</label>
-                    <div className="text-sm">{formatDate(selectedUser.updatedAt)}</div>
-                  </div>
-                  {selectedUser.paidAt && (
-                    <div>
-                      <label className="text-foreground-secondary text-sm">Paid At</label>
-                      <div className="text-sm">{formatDate(selectedUser.paidAt)}</div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  {[
+                    { label: "Phone", value: selectedUser.phone || "N/A" },
+                    { label: "Role", value: selectedUser.role.toUpperCase() },
+                    { label: "Plan", value: selectedUser.plan.toUpperCase() },
+                    { label: "Currency", value: selectedUser.currency || "N/A" },
+                    { label: "Signup IP", value: selectedUser.signupIp || "N/A" },
+                    { label: "Last Login IP", value: selectedUser.lastLoginIp || "N/A" },
+                    { label: "Status", value: selectedUser.disabled ? "DISABLED" : "ACTIVE" },
+                    { label: "Disabled Reason", value: selectedUser.disabledReason || "N/A" },
+                    { label: "Created", value: formatDate(selectedUser.createdAt) },
+                    { label: "Updated", value: formatDate(selectedUser.updatedAt) },
+                    { label: "Paid At", value: selectedUser.paidAt ? formatDate(selectedUser.paidAt) : "Never" },
+                  ].map((item) => (
+                    <div key={item.label}>
+                      <div className="text-foreground-secondary text-xs">{item.label}</div>
+                      <div className="font-medium mt-0.5">{item.value}</div>
                     </div>
-                  )}
+                  ))}
                 </div>
 
-                <div className="pt-4 border-t border-hud-blue/20">
-                  <label className="text-foreground-secondary text-sm">User ID</label>
-                  <div className="font-mono text-xs text-foreground-secondary break-all">
-                    {selectedUser.id}
-                  </div>
+                <div className="mt-4 pt-4 border-t border-hud-blue/20">
+                  <div className="text-foreground-secondary text-xs">User ID</div>
+                  <div className="font-mono text-xs break-all mt-0.5">{selectedUser.id}</div>
                 </div>
-              </div>
+
+                {/* Quick Actions in modal */}
+                <div className="mt-6 pt-4 border-t border-hud-blue/20 flex flex-wrap gap-2">
+                  <select
+                    value={selectedUser.plan}
+                    onChange={(e) => {
+                      doAction("changePlan", selectedUser.id, { plan: e.target.value });
+                    }}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/30 cursor-pointer"
+                  >
+                    <option value="free">Free</option>
+                    <option value="starter">Starter</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                  {selectedUser.role !== "admin" ? (
+                    <button onClick={() => doAction("makeAdmin", selectedUser.id)} className="px-3 py-1.5 text-xs rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20">
+                      Make Admin
+                    </button>
+                  ) : (
+                    <button onClick={() => doAction("removeAdmin", selectedUser.id)} className="px-3 py-1.5 text-xs rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/30 hover:bg-orange-500/20">
+                      Remove Admin
+                    </button>
+                  )}
+                  {selectedUser.disabled ? (
+                    <button onClick={() => doAction("enableUser", selectedUser.id)} className="px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20">
+                      Enable User
+                    </button>
+                  ) : (
+                    <button onClick={() => doAction("disableUser", selectedUser.id, { reason: "Disabled by admin" })} className="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20">
+                      Disable User
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setSelectedUser(null); setResetPwModal({ userId: selectedUser.id, name: selectedUser.name }); }}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20"
+                  >
+                    Reset Password
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          )}
+        </AnimatePresence>
+
+        {/* ==================== CONFIRM MODAL ==================== */}
+        <AnimatePresence>
+          {confirmAction && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+              onClick={() => setConfirmAction(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.9 }}
+                className="hud-panel p-6 max-w-md w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-xl font-bold mb-2">Confirm Action</h3>
+                <p className="text-foreground-secondary mb-6">
+                  {confirmAction.action === "deleteUser" && `Are you sure you want to DELETE "${confirmAction.userName}"? This cannot be undone.`}
+                  {confirmAction.action === "disableUser" && `Disable "${confirmAction.userName}"? They won't be able to log in.`}
+                  {confirmAction.action === "makeAdmin" && `Grant admin access to "${confirmAction.userName}"?`}
+                  {confirmAction.action === "removeAdmin" && `Remove admin access from "${confirmAction.userName}"?`}
+                  {confirmAction.action === "changePlan" && `Change "${confirmAction.userName}" plan to ${confirmAction.extra?.toUpperCase()}?`}
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setConfirmAction(null)}
+                    className="px-4 py-2 text-sm rounded-lg bg-background-secondary text-foreground-secondary hover:text-white transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const extra = confirmAction.action === "changePlan" ? { plan: confirmAction.extra! } : confirmAction.action === "disableUser" ? { reason: "Disabled by admin" } : undefined;
+                      doAction(confirmAction.action, confirmAction.userId, extra);
+                    }}
+                    disabled={!!actionLoading}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium transition ${
+                      confirmAction.action === "deleteUser"
+                        ? "bg-red-600 hover:bg-red-500 text-white"
+                        : "bg-hud-cyan/20 text-hud-cyan border border-hud-cyan/50 hover:bg-hud-cyan/30"
+                    }`}
+                  >
+                    {actionLoading ? "Processing..." : "Confirm"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ==================== RESET PASSWORD MODAL ==================== */}
+        <AnimatePresence>
+          {resetPwModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+              onClick={() => { setResetPwModal(null); setNewPassword(""); }}
+            >
+              <motion.div
+                initial={{ scale: 0.9 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.9 }}
+                className="hud-panel p-6 max-w-md w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-xl font-bold mb-2">Reset Password</h3>
+                <p className="text-foreground-secondary mb-4 text-sm">
+                  Set a new password for {resetPwModal.name}
+                </p>
+                <input
+                  type="text"
+                  placeholder="New password (min 6 chars)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-background-secondary border border-hud-blue/30 rounded-lg px-4 py-2 text-sm text-foreground focus:outline-none focus:border-hud-cyan/50 mb-4"
+                />
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => { setResetPwModal(null); setNewPassword(""); }}
+                    className="px-4 py-2 text-sm rounded-lg bg-background-secondary text-foreground-secondary hover:text-white transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (newPassword.length < 6) { showToast("Password must be 6+ chars"); return; }
+                      doAction("resetPassword", resetPwModal.userId, { newPassword });
+                      setResetPwModal(null);
+                      setNewPassword("");
+                    }}
+                    disabled={!!actionLoading}
+                    className="px-4 py-2 text-sm rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 transition font-medium"
+                  >
+                    {actionLoading ? "Resetting..." : "Reset Password"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

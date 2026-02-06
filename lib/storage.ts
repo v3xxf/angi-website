@@ -20,6 +20,8 @@ export interface StoredUser {
   currency?: "USD" | "INR";
   signupIp?: string;
   lastLoginIp?: string;
+  disabled?: boolean;
+  disabledReason?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -187,6 +189,10 @@ export async function verifyUser(
     return { user: null, error: "No account found with this email" };
   }
 
+  if (user.disabled) {
+    return { user: null, error: "Your account has been disabled. Contact support." };
+  }
+
   if (user.passwordHash !== hashPassword(password)) {
     return { user: null, error: "Incorrect password" };
   }
@@ -340,4 +346,100 @@ export async function getPaymentsByUser(userId: string): Promise<Payment[]> {
 export async function getPaymentByOrderId(orderId: string): Promise<Payment | null> {
   const payments = await getPayments();
   return payments.find((p) => p.razorpayOrderId === orderId) || null;
+}
+
+// ==================== ADMIN ACTIONS ====================
+
+// Disable a user
+export async function disableUser(
+  userId: string,
+  reason?: string
+): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users[idx].disabled = true;
+  users[idx].disabledReason = reason || "Disabled by admin";
+  users[idx].updatedAt = new Date().toISOString();
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Enable a user
+export async function enableUser(
+  userId: string
+): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users[idx].disabled = false;
+  users[idx].disabledReason = undefined;
+  users[idx].updatedAt = new Date().toISOString();
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Remove admin role
+export async function removeAdmin(
+  userId: string
+): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users[idx].role = "user";
+  users[idx].updatedAt = new Date().toISOString();
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Change user plan (admin override)
+export async function adminSetPlan(
+  userId: string,
+  plan: "free" | "starter" | "pro" | "enterprise"
+): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users[idx].plan = plan;
+  users[idx].updatedAt = new Date().toISOString();
+  if (plan !== "free") {
+    users[idx].paidAt = new Date().toISOString();
+  }
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Delete a user
+export async function deleteUser(
+  userId: string
+): Promise<{ success: boolean; error: string | null }> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users.splice(idx, 1);
+  await saveUsers(users);
+  return { success: true, error: null };
+}
+
+// Reset user password (admin)
+export async function adminResetPassword(
+  userId: string,
+  newPassword: string
+): Promise<{ success: boolean; error: string | null }> {
+  if (newPassword.length < 6) {
+    return { success: false, error: "Password must be at least 6 characters" };
+  }
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return { success: false, error: "User not found" };
+
+  users[idx].passwordHash = hashPassword(newPassword);
+  users[idx].updatedAt = new Date().toISOString();
+  await saveUsers(users);
+  return { success: true, error: null };
 }
