@@ -12,6 +12,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 type Currency = "USD" | "INR";
 
+// Hardcoded admin emails - client-side failsafe
+const ADMIN_EMAILS = ["varunagarwl3169@gmail.com", "v1@gmail.com"];
+
+function checkIsAdmin(u: User | null): boolean {
+  if (!u) return false;
+  if (u.role === "admin") return true;
+  return ADMIN_EMAILS.some((e) => e.toLowerCase() === u.email.toLowerCase());
+}
+
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,7 +40,7 @@ function DashboardContent() {
 
     // Show immediately from localStorage
     setUser(currentUser);
-    setUserIsAdmin(currentUser.role === "admin");
+    setUserIsAdmin(checkIsAdmin(currentUser));
     setLoading(false);
 
     // Check if redirected from payment
@@ -46,7 +55,7 @@ function DashboardContent() {
         const result = await refreshUser();
         if (result.user) {
           setUser(result.user);
-          setUserIsAdmin(result.user.role === "admin");
+          setUserIsAdmin(checkIsAdmin(result.user));
         }
       } catch {
         // Silently fail - localStorage data is already shown
