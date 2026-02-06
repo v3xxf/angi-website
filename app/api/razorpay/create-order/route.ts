@@ -1,42 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import Razorpay from "razorpay";
 import { createPayment } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    // Trim any whitespace from env vars
     const keyId = process.env.RAZORPAY_KEY_ID?.trim();
     const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    
-    // Log key info for debugging (first 10 chars only, hide rest)
-    console.log("Razorpay config:", {
-      keyIdPrefix: keyId?.substring(0, 15) + "...",
-      keyIdLength: keyId?.length,
-      keySecretLength: keySecret?.length,
-      keySecretPrefix: keySecret?.substring(0, 5) + "...",
-    });
-    
+
+    console.log("=== RAZORPAY CREATE ORDER ===");
+    console.log("Key ID exists:", !!keyId, "Length:", keyId?.length);
+    console.log("Secret exists:", !!keySecret, "Length:", keySecret?.length);
+
     if (!keyId || !keySecret) {
-      console.error("Razorpay keys missing:", { hasKeyId: !!keyId, hasKeySecret: !!keySecret });
+      console.error("Missing Razorpay credentials");
       return NextResponse.json(
-        { error: "Payment system not configured. Please contact support." },
-        { status: 503 }
+        { error: "Payment system not configured" },
+        { status: 500 }
       );
     }
 
-    const razorpay = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
-    });
-
     const body = await request.json();
-    const { amount, currency, plan, isYearly, userId, email } = body;
+    const { amount, plan, isYearly, userId, email } = body;
 
-    console.log("Creating order with:", { amount, currency, plan, isYearly, userId, email });
+    console.log("Request body:", { amount, plan, isYearly, userId, email });
 
-    // Validate inputs
     if (!amount || amount <= 0) {
       return NextResponse.json(
         { error: "Invalid amount" },
@@ -44,23 +32,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate currency
-    if (!["INR", "USD"].includes(currency)) {
-      return NextResponse.json(
-        { error: "Invalid currency. Use INR or USD." },
-        { status: 400 }
-      );
-    }
+    // Amount should already be in paise from client
+    const amountInPaise = Math.round(amount);
+    const receipt = `rcpt_${Date.now()}`.substring(0, 40);
 
-    // Razorpay requires amount in smallest currency unit (paise for INR, cents for USD)
-    // Make sure amount is an integer
-    const amountInSmallestUnit = Math.round(amount);
-
-    // Create Razorpay order
-    const options = {
-      amount: amountInSmallestUnit,
-      currency: currency,
-      receipt: `rcpt_${plan}_${Date.now()}`.substring(0, 40), // Receipt max 40 chars
+    // Create order using direct API call (simpler than SDK)
+    const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+    
+    const orderPayload = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: receipt,
       notes: {
         plan: plan || "unknown",
         billing: isYearly ? "yearly" : "monthly",
@@ -69,19 +51,48 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    console.log("Razorpay order options:", options);
+    console.log("Creating order with payload:", orderPayload);
 
-    const order = await razorpay.orders.create(options);
-    
+    const razorpayResponse = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Basic ${auth}`,
+      },
+      body: JSON.stringify(orderPayload),
+    });
+
+    const responseText = await razorpayResponse.text();
+    console.log("Razorpay response status:", razorpayResponse.status);
+    console.log("Razorpay response:", responseText);
+
+    if (!razorpayResponse.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch {
+        errorData = { description: responseText };
+      }
+      console.error("Razorpay API error:", errorData);
+      return NextResponse.json(
+        { 
+          error: errorData?.error?.description || "Failed to create payment order",
+          details: errorData 
+        },
+        { status: razorpayResponse.status }
+      );
+    }
+
+    const order = JSON.parse(responseText);
     console.log("Order created successfully:", order.id);
 
-    // Record payment in our storage
+    // Store payment record
     if (userId && email) {
       await createPayment(
         userId,
         email,
-        amountInSmallestUnit, // Store in smallest unit
-        currency as "USD" | "INR",
+        amountInPaise,
+        "INR",
         plan,
         order.id
       );
@@ -89,31 +100,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(order);
   } catch (error: unknown) {
-    // Log the full error for debugging
-    console.error("RAZORPAY ERROR FULL:", error);
-    console.error("RAZORPAY ERROR STRING:", JSON.stringify(error, null, 2));
-    
-    // Try to extract error details
-    const err = error as { 
-      error?: { description?: string; code?: string; reason?: string }; 
-      message?: string; 
-      statusCode?: number;
-      response?: { data?: { error?: { description?: string } } };
-    };
-    
-    console.error("Error creating Razorpay order:", {
-      message: err?.message,
-      description: err?.error?.description,
-      code: err?.error?.code,
-      reason: err?.error?.reason,
-      statusCode: err?.statusCode,
-    });
-    
-    // Return more specific error message
-    const errorMessage = err?.error?.description || err?.error?.reason || err?.message || "Failed to create order. Please try again.";
+    console.error("Create order error:", error);
+    const err = error as { message?: string };
     return NextResponse.json(
-      { error: errorMessage, details: err?.error },
-      { status: err?.statusCode || 500 }
+      { error: err?.message || "Failed to create order" },
+      { status: 500 }
     );
   }
 }

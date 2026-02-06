@@ -75,12 +75,13 @@ export default function CheckoutPage() {
     setLoading(true);
 
     try {
+      // Force INR for now
       const response = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: amountInSmallestUnit,
-          currency,
+          currency: "INR",
           plan: planId,
           isYearly,
           userId: user.id,
