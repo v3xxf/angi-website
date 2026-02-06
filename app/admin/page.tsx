@@ -642,7 +642,9 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     onClick={() => {
-                      const extra = confirmAction.action === "changePlan" ? { plan: confirmAction.extra! } : confirmAction.action === "disableUser" ? { reason: "Disabled by admin" } : undefined;
+                      let extra: Record<string, string> | undefined;
+                      if (confirmAction.action === "changePlan") extra = { plan: confirmAction.extra! };
+                      else if (confirmAction.action === "disableUser") extra = { reason: "Disabled by admin" };
                       doAction(confirmAction.action, confirmAction.userId, extra);
                     }}
                     disabled={!!actionLoading}
