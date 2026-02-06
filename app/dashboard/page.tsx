@@ -29,29 +29,30 @@ function DashboardContent() {
       return;
     }
 
-    // Always refresh user data from server to get latest plan/role
-    const loadFreshData = async () => {
-      const result = await refreshUser();
-      if (result.user) {
-        setUser(result.user);
-        setUserIsAdmin(result.user.role === "admin");
-      } else {
-        // Fallback to localStorage if server is unreachable
-        setUser(currentUser);
-        setUserIsAdmin(isAdmin());
-      }
+    // Show immediately from localStorage
+    setUser(currentUser);
+    setUserIsAdmin(currentUser.role === "admin");
+    setLoading(false);
 
-      // Check if redirected from payment
-      if (searchParams.get("payment") === "success") {
-        setPaymentSuccess(true);
-        // Clear the URL param
-        window.history.replaceState({}, "", "/dashboard");
-      }
+    // Check if redirected from payment
+    if (searchParams.get("payment") === "success") {
+      setPaymentSuccess(true);
+      window.history.replaceState({}, "", "/dashboard");
+    }
 
-      setLoading(false);
+    // Then refresh from server in background for latest plan/role
+    const refreshInBackground = async () => {
+      try {
+        const result = await refreshUser();
+        if (result.user) {
+          setUser(result.user);
+          setUserIsAdmin(result.user.role === "admin");
+        }
+      } catch {
+        // Silently fail - localStorage data is already shown
+      }
     };
-
-    loadFreshData();
+    refreshInBackground();
   }, [router, searchParams]);
 
   const handleSignOut = async () => {
